@@ -256,3 +256,8 @@ def test_chat_completions_response_generates_plan(monkeypatch):
 
     assert plan["lessons"][0]["title"] == "Provider lesson"
     assert plan["knowledge_points"][0]["name"] == "Concept"
+
+
+def test_json_parser_handles_reasoning_text_before_json():
+    content = '<think>I will return {"not": "this"}.</think>\n\n{"ok": true}\nDone.'
+    assert ai._json_from_text(content) == {"ok": True}

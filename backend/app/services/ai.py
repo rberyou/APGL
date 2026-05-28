@@ -73,13 +73,22 @@ def _client() -> OpenAI | None:
 
 def _json_from_text(text: str) -> dict[str, Any] | None:
     cleaned = text.strip()
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.S | re.I).strip()
     fenced = re.search(r"```(?:json)?\s*(.*?)```", cleaned, flags=re.S)
     if fenced:
         cleaned = fenced.group(1).strip()
     try:
         value = json.loads(cleaned)
     except json.JSONDecodeError:
-        return None
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r"\{", cleaned):
+            try:
+                value, _ = decoder.raw_decode(cleaned[match.start() :])
+                break
+            except json.JSONDecodeError:
+                continue
+        else:
+            return None
     return value if isinstance(value, dict) else None
 
 

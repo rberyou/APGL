@@ -13,7 +13,7 @@ Last updated: 2026-05-29
 - Added backend pytest coverage for the core learning loop.
 - Created local `.venv` and installed backend dependencies without using global Python packages.
 - Installed frontend dependencies under `frontend/node_modules`.
-- Verified backend tests: `7 passed`.
+- Verified backend tests: `8 passed`.
 - Verified frontend production build with `npm run build`.
 - Started local backend and frontend dev servers.
 - Completed HTTP smoke test for register, skill project generation, lesson retrieval, quiz answer, mistake creation, and review queue.
@@ -21,6 +21,7 @@ Last updated: 2026-05-29
 - Added explicit 8 MB material upload limit copy, frontend file-size validation, and backend 413 error detail.
 - Implemented OpenAI-compatible Chat Completions through `LLM_*` environment variables, with explicit mock mode and visible LLM configuration errors.
 - Added public `/api/config` so the frontend displays the backend-configured upload limit.
+- Verified MiniMax-compatible `.env` configuration and improved JSON extraction for providers that emit `<think>` blocks before JSON.
 
 ## Current State
 
