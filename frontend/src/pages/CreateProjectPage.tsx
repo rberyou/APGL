@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Brain, FileUp, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
@@ -20,12 +20,21 @@ export default function CreateProjectPage() {
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const config = useQuery({ queryKey: ["app-config"], queryFn: api.appConfig });
+  const maxMaterialFileBytes = config.data?.max_upload_bytes ?? MAX_MATERIAL_FILE_BYTES;
 
   const mutation = useMutation({
     mutationFn: async () => {
       const selectedFile = file;
       if (sourceType === "material") {
         if (!selectedFile) throw new Error("Choose a PDF, Markdown, or text file");
+        if (selectedFile.size > maxMaterialFileBytes) {
+          throw new Error(
+            `File is ${formatFileSize(selectedFile.size)}. Maximum upload size is ${formatFileSize(
+              maxMaterialFileBytes
+            )}.`
+          );
+        }
         if (fileError) throw new Error(fileError);
       }
       const created = await api.createProject({
@@ -54,10 +63,10 @@ export default function CreateProjectPage() {
 
   function handleFileChange(nextFile: File | null) {
     setFile(nextFile);
-    if (nextFile && nextFile.size > MAX_MATERIAL_FILE_BYTES) {
+    if (nextFile && nextFile.size > maxMaterialFileBytes) {
       setFileError(
         `File is ${formatFileSize(nextFile.size)}. Maximum upload size is ${formatFileSize(
-          MAX_MATERIAL_FILE_BYTES
+          maxMaterialFileBytes
         )}.`
       );
     } else {
@@ -167,7 +176,7 @@ export default function CreateProjectPage() {
             </label>
             <p className="mt-2 text-xs leading-5 text-slate-500">
               Supported formats: PDF, Markdown, and plain text. Maximum upload size:{" "}
-              {formatFileSize(MAX_MATERIAL_FILE_BYTES)}.
+              {formatFileSize(maxMaterialFileBytes)}.
             </p>
             {fileError ? <div className="mt-3"><ErrorMessage message={fileError} /></div> : null}
           </div>

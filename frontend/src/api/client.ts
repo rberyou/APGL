@@ -1,5 +1,6 @@
 import type {
   AnswerResult,
+  AppConfig,
   Job,
   Lesson,
   MaterialUploadResponse,
@@ -45,6 +46,9 @@ function jsonBody(body: JsonBody): string {
 }
 
 export const api = {
+  appConfig() {
+    return apiFetch<AppConfig>("/config");
+  },
   register(email: string, password: string) {
     return apiFetch<User>("/auth/register", {
       method: "POST",
@@ -123,4 +127,3 @@ export const api = {
     return apiFetch<Mistake[]>("/mistakes");
   }
 };
-

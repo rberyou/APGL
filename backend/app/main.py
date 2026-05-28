@@ -30,6 +30,11 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/config")
+def public_config():
+    return {"max_upload_bytes": settings.max_upload_bytes}
+
+
 app.include_router(auth.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(materials.router, prefix="/api")

@@ -10,7 +10,7 @@ flowchart LR
   API --> DB["SQLite"]
   API --> Jobs["FastAPI BackgroundTasks + Job table"]
   Jobs --> Materials["PDF/Markdown/Text parser"]
-  Jobs --> AI["OpenAI Responses API or mock AI"]
+  Jobs --> AI["OpenAI-compatible Chat Completions or explicit mock AI"]
   AI --> DB
 ```
 
@@ -19,7 +19,7 @@ flowchart LR
 - `app.main` creates the FastAPI app, CORS, startup database initialization, and routers.
 - `app.models` contains SQLModel tables.
 - `app.services.materials` extracts and chunks uploaded material.
-- `app.services.ai` wraps OpenAI Responses API and deterministic fallback output.
+- `app.services.ai` wraps OpenAI-compatible Chat Completions and deterministic explicit mock output.
 - `app.services.jobs` processes skill and material generation jobs.
 - Auth uses email/password, Argon2 password hashing, and httpOnly Cookie sessions.
 
@@ -38,7 +38,7 @@ flowchart LR
 
 ## AI Strategy
 
-- `OPENAI_MODEL_FAST`: default `gpt-5-mini` for extraction-like tasks.
-- `OPENAI_MODEL_SMART`: default `gpt-5.2` for tutoring and grading.
-- If `OPENAI_API_KEY` is missing or `APGL_MOCK_AI=true`, backend uses deterministic fallback content.
-
+- Prefer `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_FAST`, and `LLM_MODEL_SMART` for third-party compatible providers.
+- `LLM_API_MODE=chat_completions` is the supported mode.
+- `OPENAI_API_KEY`, `OPENAI_MODEL_FAST`, and `OPENAI_MODEL_SMART` remain legacy fallback settings.
+- `APGL_MOCK_AI=true` enables deterministic local fallback content. If mock is false and LLM config/calls fail, jobs fail with visible errors.

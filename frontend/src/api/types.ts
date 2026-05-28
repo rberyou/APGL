@@ -87,3 +87,6 @@ export type Mistake = {
   created_at: string;
 };
 
+export type AppConfig = {
+  max_upload_bytes: number;
+};

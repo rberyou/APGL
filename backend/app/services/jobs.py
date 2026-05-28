@@ -44,6 +44,15 @@ def _set_job_status(db: Session, job: Job, status: str, error: str | None = None
     db.commit()
 
 
+def _set_project_status(db: Session, project_id: int, status: str) -> None:
+    project = db.get(LearningProject, project_id)
+    if project:
+        project.status = status
+        project.updated_at = utc_now()
+        db.add(project)
+        db.commit()
+
+
 def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
     knowledge_points = plan.get("knowledge_points") or []
     kp_rows: list[KnowledgePoint] = []
@@ -107,6 +116,7 @@ def process_skill_job(job_id: int) -> None:
             _store_plan(db, project, plan)
             _set_job_status(db, job, "completed")
         except Exception as exc:
+            _set_project_status(db, job.project_id, "failed")
             _set_job_status(db, job, "failed", str(exc))
 
 
@@ -149,6 +159,7 @@ def process_material_job(job_id: int) -> None:
             _store_plan(db, project, plan)
             _set_job_status(db, job, "completed")
         except Exception as exc:
+            _set_project_status(db, job.project_id, "failed")
             if job.material_id:
                 material = db.get(SourceMaterial, job.material_id)
                 if material:

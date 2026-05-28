@@ -14,6 +14,7 @@ from app.models import (
     utc_now,
 )
 from app.schemas import AnswerCreate, AnswerResult, QuizItemRead
+from app.services.ai import AIServiceError
 from app.services.ai import grade_answer
 
 
@@ -53,7 +54,10 @@ def answer_quiz_item(
         raise HTTPException(status_code=404, detail="Quiz item not found")
     _assert_quiz_owner(db, quiz, user)
 
-    graded = grade_answer(quiz.prompt, quiz.answer, payload.answer)
+    try:
+        graded = grade_answer(quiz.prompt, quiz.answer, payload.answer)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     user_answer = UserAnswer(
         quiz_item_id=quiz.id,
         user_id=user.id,

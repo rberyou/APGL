@@ -7,6 +7,7 @@ from app.database import get_session
 from app.deps import get_current_user
 from app.models import QuizItem, ReviewTask, User, utc_now
 from app.schemas import AnswerResult, ReviewSubmit, ReviewTaskRead
+from app.services.ai import AIServiceError
 from app.services.ai import grade_answer
 
 
@@ -55,7 +56,10 @@ def submit_review(
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz item not found")
 
-    graded = grade_answer(quiz.prompt, quiz.answer, payload.answer)
+    try:
+        graded = grade_answer(quiz.prompt, quiz.answer, payload.answer)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     if graded["is_correct"]:
         task.status = "completed"
         next_review_id = None

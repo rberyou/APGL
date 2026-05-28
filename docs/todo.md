@@ -2,7 +2,7 @@
 
 ## P0
 
-- Commit and push the MVP to `origin main`.
+- Configure and manually verify the target third-party LLM provider in `.env`.
 
 ## P1
 
@@ -10,6 +10,7 @@
 - Add richer material chunk source references for PDF pages and Markdown headings.
 - Add project-level knowledge point view in the frontend.
 - Add rate limits or basic abuse protection around auth and AI generation.
+- Add frontend LLM settings page, provider presets, and a provider connectivity test button.
 
 ## P2
 

@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 ## Completed
 
@@ -13,17 +13,19 @@ Last updated: 2026-05-28
 - Added backend pytest coverage for the core learning loop.
 - Created local `.venv` and installed backend dependencies without using global Python packages.
 - Installed frontend dependencies under `frontend/node_modules`.
-- Verified backend tests: `3 passed`.
+- Verified backend tests: `7 passed`.
 - Verified frontend production build with `npm run build`.
 - Started local backend and frontend dev servers.
 - Completed HTTP smoke test for register, skill project generation, lesson retrieval, quiz answer, mistake creation, and review queue.
 - Clarified project lesson cards as AI-generated learning path units and made mock fallback lesson titles more project-specific.
 - Added explicit 8 MB material upload limit copy, frontend file-size validation, and backend 413 error detail.
+- Implemented OpenAI-compatible Chat Completions through `LLM_*` environment variables, with explicit mock mode and visible LLM configuration errors.
+- Added public `/api/config` so the frontend displays the backend-configured upload limit.
 
 ## Current State
 
-Implementation is verified locally and ready for commit and push. Backend is available at `http://127.0.0.1:8000`; frontend is available at `http://127.0.0.1:5173`.
+Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support.
 
 ## Next Step
 
-Commit the MVP implementation and push to `origin main`.
+Configure `LLM_API_KEY`, `LLM_BASE_URL`, and provider model names in `.env`, then create a new learning project to verify the chosen provider.
