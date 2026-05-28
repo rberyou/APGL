@@ -4,6 +4,12 @@ import { BookOpen, CheckCircle2, Clock, Play } from "lucide-react";
 import { api } from "../api/client";
 import { EmptyState, ErrorMessage, LoadingBlock } from "../components/Layout";
 
+function statusLabel(status: string) {
+  if (status === "completed") return "Completed";
+  if (status === "pending") return "To learn";
+  return status;
+}
+
 export default function ProjectDetailPage() {
   const { projectId } = useParams();
   const id = Number(projectId);
@@ -55,37 +61,50 @@ export default function ProjectDetailPage() {
       {lessons.error ? <ErrorMessage message={lessons.error.message} /> : null}
 
       {lessons.data?.length ? (
-        <section className="grid gap-4">
-          {lessons.data.map((lesson) => (
-            <Link
-              key={lesson.id}
-              to={`/lessons/${lesson.id}`}
-              className="panel flex flex-col gap-4 transition hover:border-teal md:flex-row md:items-center md:justify-between"
-            >
-              <div className="flex gap-4">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-paper text-teal">
-                  {lesson.status === "completed" ? (
-                    <CheckCircle2 size={20} aria-hidden="true" />
-                  ) : (
-                    <BookOpen size={20} aria-hidden="true" />
-                  )}
-                </span>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-bold text-ink">{lesson.title}</h2>
-                    <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold capitalize text-slate-600">
-                      {lesson.status}
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-bold text-ink">AI-generated learning path</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+              Each card is a lesson unit created from your project goal. Work through them in
+              order: open a lesson, read the tutor notes, answer the check questions, and review
+              anything you miss.
+            </p>
+          </div>
+          <div className="grid gap-4">
+            {lessons.data.map((lesson, index) => (
+              <Link
+                key={lesson.id}
+                to={`/lessons/${lesson.id}`}
+                className="panel flex flex-col gap-4 transition hover:border-teal md:flex-row md:items-center md:justify-between"
+              >
+                <div className="flex gap-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-paper text-teal">
+                    {lesson.status === "completed" ? (
+                      <CheckCircle2 size={20} aria-hidden="true" />
+                    ) : (
+                      <BookOpen size={20} aria-hidden="true" />
+                    )}
+                  </span>
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wide text-ember">
+                      Lesson {index + 1}
                     </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold text-ink">{lesson.title}</h3>
+                      <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold capitalize text-slate-600">
+                        {statusLabel(lesson.status)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{lesson.summary}</p>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{lesson.summary}</p>
                 </div>
-              </div>
-              <span className="btn-secondary shrink-0">
-                <Play size={16} aria-hidden="true" />
-                Open
-              </span>
-            </Link>
-          ))}
+                <span className="btn-secondary shrink-0">
+                  <Play size={16} aria-hidden="true" />
+                  {lesson.status === "completed" ? "Review" : "Start lesson"}
+                </span>
+              </Link>
+            ))}
+          </div>
         </section>
       ) : (
         <EmptyState
@@ -106,4 +125,3 @@ export default function ProjectDetailPage() {
     </div>
   );
 }
-

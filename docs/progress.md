@@ -17,6 +17,7 @@ Last updated: 2026-05-28
 - Verified frontend production build with `npm run build`.
 - Started local backend and frontend dev servers.
 - Completed HTTP smoke test for register, skill project generation, lesson retrieval, quiz answer, mistake creation, and review queue.
+- Clarified project lesson cards as AI-generated learning path units and made mock fallback lesson titles more project-specific.
 
 ## Current State
 

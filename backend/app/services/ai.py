@@ -46,55 +46,58 @@ def _fallback_plan(title: str, goal: str, source_excerpt: str | None = None) -> 
     return {
         "knowledge_points": [
             {
-                "name": "Learning goal",
-                "explanation": f"Clarify what '{title}' is for and what success looks like.",
+                "name": f"{title} learning objective",
+                "explanation": f"Clarify what '{title}' is for, what you can do today, and what success should look like.",
             },
             {
-                "name": "Core concepts",
-                "explanation": f"Identify the essential concepts in: {context[:180]}",
+                "name": f"{title} core concepts",
+                "explanation": f"Identify the essential concepts, terms, and examples behind: {context[:180]}",
             },
             {
-                "name": "Practice and feedback",
-                "explanation": "Use short exercises, feedback, and review to build durable skill.",
+                "name": f"{title} practice loop",
+                "explanation": "Use short exercises, feedback, mistakes, and review to turn knowledge into usable skill.",
             },
         ],
         "lessons": [
             {
-                "title": f"Map the goal: {title}",
-                "summary": "Turn the learning goal into a small, testable path.",
+                "title": f"Orient yourself in {title}",
+                "summary": "Define the target outcome, current baseline, and first useful practice step.",
                 "content": (
                     f"Your goal is: {goal}\n\n"
-                    "Start by naming the outcome, the current baseline, and the first useful practice task."
+                    f"Start by naming why {title} matters to you, which parts are unfamiliar, "
+                    "and what a small successful practice result would look like."
                 ),
                 "quiz": [
                     {
                         "question_type": "short_answer",
-                        "prompt": "What is the concrete outcome you want from this learning project?",
+                        "prompt": f"What concrete outcome do you want from learning {title}?",
                         "answer": "A specific outcome with a clear use case.",
                         "explanation": "A clear outcome helps the AI tutor choose better lessons and practice.",
                     }
                 ],
             },
             {
-                "title": "Learn the core concepts",
-                "summary": "Study the smallest useful set of ideas before practicing.",
+                "title": f"Build the {title} concept map",
+                "summary": "Study the smallest useful set of concepts before practicing.",
                 "content": (
-                    "Read the key concepts, restate them in your own words, then connect each concept to an example."
+                    f"List the key {title} concepts, restate each one in your own words, "
+                    "then connect each concept to a concrete example or use case."
                 ),
                 "quiz": [
                     {
                         "question_type": "short_answer",
-                        "prompt": "Explain one core concept in your own words.",
+                        "prompt": f"Explain one core {title} concept in your own words.",
                         "answer": "A correct explanation should be concise and include an example.",
                         "explanation": "Self-explanation exposes shallow understanding quickly.",
                     }
                 ],
             },
             {
-                "title": "Practice, correct, and review",
+                "title": f"Practice and review {title}",
                 "summary": "Use feedback and spaced review to make the learning stick.",
                 "content": (
-                    "Complete a small exercise, compare your answer with feedback, and schedule review for weak points."
+                    f"Complete a small {title} exercise, compare your answer with feedback, "
+                    "and schedule review for weak points."
                 ),
                 "quiz": [
                     {
@@ -113,7 +116,8 @@ def generate_skill_plan(title: str, goal: str, current_level: str | None) -> dic
     system = (
         "You are an AI private tutor. Return only JSON with keys "
         "knowledge_points and lessons. Each lesson must include title, summary, content, "
-        "and quiz. Each quiz item must include question_type, prompt, answer, explanation."
+        "and quiz. Each quiz item must include question_type, prompt, answer, explanation. "
+        "Use the same language as the learner's goal."
     )
     user = (
         f"Create a concise MVP learning path.\nTitle: {title}\nGoal: {goal}\n"
@@ -127,7 +131,8 @@ def generate_material_plan(title: str, goal: str, chunks: list[str]) -> dict[str
     excerpt = "\n\n".join(chunks[:3])[:6000]
     system = (
         "You convert learning materials into guided study plans. Return only JSON with keys "
-        "knowledge_points and lessons. Lessons must be grounded in the supplied material."
+        "knowledge_points and lessons. Lessons must be grounded in the supplied material. "
+        "Use the same language as the learner's goal or material."
     )
     user = (
         f"Project title: {title}\nGoal: {goal}\nMaterial excerpt:\n{excerpt}\n\n"
@@ -166,4 +171,3 @@ def grade_answer(prompt: str, expected: str, submitted: str) -> dict[str, Any]:
         else f"Review the expected idea: {expected}"
     )
     return {"is_correct": is_correct, "feedback": feedback}
-
