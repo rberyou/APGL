@@ -5,6 +5,12 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { ErrorMessage } from "../components/Layout";
 
+const MAX_MATERIAL_FILE_BYTES = 8 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+}
+
 export default function CreateProjectPage() {
   const [sourceType, setSourceType] = useState<"skill" | "material">("skill");
   const [title, setTitle] = useState("");
@@ -12,10 +18,16 @@ export default function CreateProjectPage() {
   const [currentLevel, setCurrentLevel] = useState("");
   const [timeBudget, setTimeBudget] = useState(30);
   const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const selectedFile = file;
+      if (sourceType === "material") {
+        if (!selectedFile) throw new Error("Choose a PDF, Markdown, or text file");
+        if (fileError) throw new Error(fileError);
+      }
       const created = await api.createProject({
         title,
         goal,
@@ -24,8 +36,8 @@ export default function CreateProjectPage() {
         time_budget_minutes: timeBudget
       });
       if (sourceType === "material") {
-        if (!file) throw new Error("Choose a PDF, Markdown, or text file");
-        const uploaded = await api.uploadMaterial(created.project.id, file);
+        if (!selectedFile) throw new Error("Choose a PDF, Markdown, or text file");
+        const uploaded = await api.uploadMaterial(created.project.id, selectedFile);
         return { projectId: created.project.id, jobId: uploaded.job_id };
       }
       return { projectId: created.project.id, jobId: created.job_id };
@@ -38,6 +50,19 @@ export default function CreateProjectPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     mutation.mutate();
+  }
+
+  function handleFileChange(nextFile: File | null) {
+    setFile(nextFile);
+    if (nextFile && nextFile.size > MAX_MATERIAL_FILE_BYTES) {
+      setFileError(
+        `File is ${formatFileSize(nextFile.size)}. Maximum upload size is ${formatFileSize(
+          MAX_MATERIAL_FILE_BYTES
+        )}.`
+      );
+    } else {
+      setFileError(null);
+    }
   }
 
   return (
@@ -129,16 +154,23 @@ export default function CreateProjectPage() {
         </div>
 
         {sourceType === "material" ? (
-          <label className="block">
-            <span className="mb-1 block text-sm font-semibold text-ink">Material file</span>
-            <input
-              className="field"
-              type="file"
-              accept=".pdf,.md,.markdown,.txt,text/plain,application/pdf"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              required
-            />
-          </label>
+          <div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-ink">Material file</span>
+              <input
+                className="field"
+                type="file"
+                accept=".pdf,.md,.markdown,.txt,text/plain,application/pdf"
+                onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
+                required
+              />
+            </label>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Supported formats: PDF, Markdown, and plain text. Maximum upload size:{" "}
+              {formatFileSize(MAX_MATERIAL_FILE_BYTES)}.
+            </p>
+            {fileError ? <div className="mt-3"><ErrorMessage message={fileError} /></div> : null}
+          </div>
         ) : null}
 
         {mutation.error ? <ErrorMessage message={mutation.error.message} /> : null}
@@ -151,4 +183,3 @@ export default function CreateProjectPage() {
     </div>
   );
 }
-

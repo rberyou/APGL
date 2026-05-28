@@ -18,6 +18,7 @@ Last updated: 2026-05-28
 - Started local backend and frontend dev servers.
 - Completed HTTP smoke test for register, skill project generation, lesson retrieval, quiz answer, mistake creation, and review queue.
 - Clarified project lesson cards as AI-generated learning path units and made mock fallback lesson titles more project-specific.
+- Added explicit 8 MB material upload limit copy, frontend file-size validation, and backend 413 error detail.
 
 ## Current State
 

@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel
 from starlette.testclient import TestClient
 
+from app.config import settings
 from app.database import engine
 from app.main import app
 
@@ -116,3 +117,31 @@ def test_material_upload_quiz_mistake_and_review_flow():
     assert mistakes.status_code == 200
     assert len(mistakes.json()) == 1
 
+
+def test_material_upload_size_limit_message():
+    client = auth_client()
+    project_response = client.post(
+        "/api/projects",
+        json={
+            "title": "Small notes",
+            "goal": "Test upload limits.",
+            "source_type": "material",
+            "current_level": "Beginner",
+            "time_budget_minutes": 20,
+        },
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["project"]["id"]
+
+    original_limit = settings.max_upload_bytes
+    settings.max_upload_bytes = 8
+    try:
+        upload = client.post(
+            f"/api/projects/{project_id}/materials",
+            files={"file": ("too-large.txt", b"123456789", "text/plain")},
+        )
+    finally:
+        settings.max_upload_bytes = original_limit
+
+    assert upload.status_code == 413
+    assert "Maximum upload size" in upload.json()["detail"]

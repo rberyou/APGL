@@ -70,4 +70,4 @@ npm run build
 - Do not install Python packages globally. Always use `.\.venv\Scripts\python -m pip`.
 - Local database files live under `backend/data/` and are ignored by Git.
 - Update `docs/progress.md` and `docs/todo.md` before pausing work.
-
+- Material uploads accept PDF, Markdown, and plain text files up to 8 MB by default. Override with `MAX_UPLOAD_BYTES`.

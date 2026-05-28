@@ -13,6 +13,10 @@ from app.services.materials import extract_text
 router = APIRouter(prefix="/projects/{project_id}/materials", tags=["materials"])
 
 
+def _format_upload_limit(bytes_count: int) -> str:
+    return f"{bytes_count / 1024 / 1024:.0f} MB"
+
+
 @router.post("", response_model=MaterialUploadResponse)
 async def upload_material(
     project_id: int,
@@ -27,7 +31,10 @@ async def upload_material(
 
     data = await file.read()
     if len(data) > settings.max_upload_bytes:
-        raise HTTPException(status_code=413, detail="File is too large")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is too large. Maximum upload size is {_format_upload_limit(settings.max_upload_bytes)}.",
+        )
 
     try:
         text = extract_text(file.filename or "material.txt", file.content_type or "", data)
@@ -52,4 +59,3 @@ async def upload_material(
     job = create_job(db, user.id, project.id, "material_plan_generation", material.id)
     background_tasks.add_task(process_material_job, job.id)
     return MaterialUploadResponse(material=material, job_id=job.id)
-
