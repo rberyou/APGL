@@ -22,6 +22,7 @@ Last updated: 2026-05-29
 - Implemented OpenAI-compatible Chat Completions through `LLM_*` environment variables, with explicit mock mode and visible LLM configuration errors.
 - Added public `/api/config` so the frontend displays the backend-configured upload limit.
 - Verified MiniMax-compatible `.env` configuration and improved JSON extraction for providers that emit `<think>` blocks before JSON.
+- Added recovery path for projects with no generated lessons and isolated backend tests from the local development database.
 
 ## Current State
 

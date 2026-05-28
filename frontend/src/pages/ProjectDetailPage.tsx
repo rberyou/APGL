@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { BookOpen, CheckCircle2, Clock, Play } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookOpen, CheckCircle2, Play, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { EmptyState, ErrorMessage, LoadingBlock } from "../components/Layout";
 
@@ -13,6 +14,8 @@ function statusLabel(status: string) {
 export default function ProjectDetailPage() {
   const { projectId } = useParams();
   const id = Number(projectId);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const project = useQuery({
     queryKey: ["project", id],
     queryFn: () => api.project(id),
@@ -22,6 +25,16 @@ export default function ProjectDetailPage() {
     queryKey: ["lessons", id],
     queryFn: () => api.lessons(id),
     enabled: Number.isFinite(id)
+  });
+  const generateMutation = useMutation({
+    mutationFn: () => api.generateProject(id),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ["project", id] });
+      queryClient.invalidateQueries({ queryKey: ["lessons", id] });
+      if (response.job_id) {
+        navigate(`/jobs/${response.job_id}?projectId=${response.project.id}`);
+      }
+    }
   });
 
   if (project.isLoading || lessons.isLoading) return <LoadingBlock label="Loading project" />;
@@ -59,6 +72,7 @@ export default function ProjectDetailPage() {
       </section>
 
       {lessons.error ? <ErrorMessage message={lessons.error.message} /> : null}
+      {generateMutation.error ? <ErrorMessage message={generateMutation.error.message} /> : null}
 
       {lessons.data?.length ? (
         <section className="space-y-3">
@@ -108,17 +122,27 @@ export default function ProjectDetailPage() {
         </section>
       ) : (
         <EmptyState
-          title="Lessons are not ready yet"
+          title="No lessons generated yet"
           body={
             project.data?.status === "generating"
-              ? "The background job is still preparing this project."
-              : "No lessons exist for this project yet."
+              ? "The background job is preparing the learning path for this project."
+              : "Lessons are generated automatically from your project goal. If none appear, regenerate the learning path; you do not need to add lessons manually."
           }
           action={
-            <Link className="btn-secondary" to="/">
-              <Clock size={16} />
-              Dashboard
-            </Link>
+            project.data?.status === "generating" ? (
+              <Link className="btn-secondary" to="/">
+                Dashboard
+              </Link>
+            ) : (
+              <button
+                className="btn-primary"
+                disabled={generateMutation.isPending}
+                onClick={() => generateMutation.mutate()}
+              >
+                <Sparkles size={16} aria-hidden="true" />
+                {generateMutation.isPending ? "Generating" : "Generate learning path"}
+              </button>
+            )
           }
         />
       )}

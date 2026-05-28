@@ -55,6 +55,10 @@ def _set_project_status(db: Session, project_id: int, status: str) -> None:
 
 def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
     knowledge_points = plan.get("knowledge_points") or []
+    lessons = plan.get("lessons") or []
+    if not lessons:
+        raise ValueError("The LLM did not return any lessons. Please regenerate the learning path.")
+
     kp_rows: list[KnowledgePoint] = []
     for item in knowledge_points[:8]:
         row = KnowledgePoint(
@@ -68,7 +72,6 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
     for row in kp_rows:
         db.refresh(row)
 
-    lessons = plan.get("lessons") or []
     for lesson_index, item in enumerate(lessons[:6], start=1):
         lesson = LessonUnit(
             project_id=project.id,

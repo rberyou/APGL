@@ -85,6 +85,11 @@ export const api = {
       body: jsonBody(body)
     });
   },
+  generateProject(projectId: number) {
+    return apiFetch<ProjectCreateResponse>(`/projects/${projectId}/generate`, {
+      method: "POST"
+    });
+  },
   uploadMaterial(projectId: number, file: File) {
     const formData = new FormData();
     formData.append("file", file);

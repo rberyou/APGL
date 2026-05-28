@@ -1,14 +1,19 @@
 import json
+import os
 from types import SimpleNamespace
 
+os.environ["DATABASE_URL"] = "sqlite:///./backend/data/test.db"
+
 import pytest
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Session
 from starlette.testclient import TestClient
 
 from app.config import settings
 from app.database import engine
 from app.main import app
+from app.models import LearningProject
 from app.services import ai
+from app.services import jobs
 
 
 @pytest.fixture(autouse=True)
@@ -78,6 +83,62 @@ def test_public_config_includes_upload_limit():
     response = client.get("/api/config")
     assert response.status_code == 200
     assert response.json()["max_upload_bytes"] == settings.max_upload_bytes
+
+
+def test_skill_job_fails_when_llm_returns_no_lessons(monkeypatch):
+    client = auth_client()
+    monkeypatch.setattr(
+        jobs,
+        "generate_skill_plan",
+        lambda *_: {"knowledge_points": [], "lessons": []},
+    )
+
+    response = client.post(
+        "/api/projects",
+        json={
+            "title": "Empty plan",
+            "goal": "Trigger an empty plan.",
+            "source_type": "skill",
+            "current_level": "Beginner",
+            "time_budget_minutes": 30,
+        },
+    )
+
+    assert response.status_code == 200
+    job = client.get(f"/api/jobs/{response.json()['job_id']}")
+    assert job.status_code == 200
+    assert job.json()["status"] == "failed"
+    assert "did not return any lessons" in job.json()["error"]
+
+
+def test_generate_endpoint_recovers_project_without_lessons():
+    client = auth_client()
+    with Session(engine) as db:
+        project = LearningProject(
+            user_id=1,
+            title="Git",
+            goal="Learn Git fundamentals.",
+            source_type="skill",
+            current_level="Beginner",
+            time_budget_minutes=30,
+            status="active",
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        project_id = project.id
+
+    response = client.post(f"/api/projects/{project_id}/generate")
+    assert response.status_code == 200
+    assert response.json()["job_id"]
+
+    job = client.get(f"/api/jobs/{response.json()['job_id']}")
+    assert job.status_code == 200
+    assert job.json()["status"] == "completed"
+
+    lessons = client.get(f"/api/projects/{project_id}/lessons")
+    assert lessons.status_code == 200
+    assert len(lessons.json()) >= 1
 
 
 def test_skill_project_generates_lessons():
