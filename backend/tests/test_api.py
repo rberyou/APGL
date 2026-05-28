@@ -5,13 +5,13 @@ from types import SimpleNamespace
 os.environ["DATABASE_URL"] = "sqlite:///./backend/data/test.db"
 
 import pytest
-from sqlmodel import SQLModel, Session
+from sqlmodel import SQLModel, Session, select
 from starlette.testclient import TestClient
 
 from app.config import settings
 from app.database import engine
 from app.main import app
-from app.models import LearningProject
+from app.models import LearningProject, LessonUnit
 from app.services import ai
 from app.services import jobs
 
@@ -110,6 +110,11 @@ def test_skill_job_fails_when_llm_returns_no_lessons(monkeypatch):
     assert job.json()["status"] == "failed"
     assert "did not return any lessons" in job.json()["error"]
 
+    latest = client.get(f"/api/jobs/projects/{response.json()['project']['id']}/latest")
+    assert latest.status_code == 200
+    assert latest.json()["id"] == job.json()["id"]
+    assert latest.json()["status"] == "failed"
+
 
 def test_generate_endpoint_recovers_project_without_lessons():
     client = auth_client()
@@ -139,6 +144,40 @@ def test_generate_endpoint_recovers_project_without_lessons():
     lessons = client.get(f"/api/projects/{project_id}/lessons")
     assert lessons.status_code == 200
     assert len(lessons.json()) >= 1
+
+
+def test_store_plan_accepts_string_items():
+    reset_db()
+    with Session(engine) as db:
+        project = LearningProject(
+            user_id=1,
+            title="Git",
+            goal="Learn Git.",
+            source_type="skill",
+            status="generating",
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+
+        jobs._store_plan(
+            db,
+            project,
+            {
+                "knowledge_points": ["commit", "branch"],
+                "lessons": [
+                    {
+                        "title": "Git basics",
+                        "summary": "Learn basic commands.",
+                        "content": "Use git status.",
+                        "quiz": ["What does git status do?"],
+                    }
+                ],
+            },
+        )
+
+        lessons = db.exec(select(LessonUnit).where(LessonUnit.project_id == project.id)).all()
+        assert len(lessons) == 1
 
 
 def test_skill_project_generates_lessons():
@@ -322,3 +361,11 @@ def test_chat_completions_response_generates_plan(monkeypatch):
 def test_json_parser_handles_reasoning_text_before_json():
     content = '<think>I will return {"not": "this"}.</think>\n\n{"ok": true}\nDone.'
     assert ai._json_from_text(content) == {"ok": True}
+
+
+def test_json_parser_skips_unrelated_json_before_plan():
+    content = 'Example: {"shape": "wrong"}\n\n{"knowledge_points": [], "lessons": [{"title": "A"}]}'
+    assert ai._json_from_text(content) == {
+        "knowledge_points": [],
+        "lessons": [{"title": "A"}],
+    }

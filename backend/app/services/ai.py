@@ -80,16 +80,25 @@ def _json_from_text(text: str) -> dict[str, Any] | None:
     try:
         value = json.loads(cleaned)
     except json.JSONDecodeError:
-        decoder = json.JSONDecoder()
-        for match in re.finditer(r"\{", cleaned):
-            try:
-                value, _ = decoder.raw_decode(cleaned[match.start() :])
-                break
-            except json.JSONDecodeError:
-                continue
-        else:
-            return None
+        return _first_json_object(cleaned)
     return value if isinstance(value, dict) else None
+
+
+def _first_json_object(text: str) -> dict[str, Any] | None:
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and _looks_like_expected_payload(value):
+            return value
+    return None
+
+
+def _looks_like_expected_payload(value: dict[str, Any]) -> bool:
+    expected_keys = {"knowledge_points", "lessons", "is_correct", "ok"}
+    return bool(expected_keys & set(value.keys()))
 
 
 def _response_json(model: str, system: str, user: str) -> dict[str, Any] | None:

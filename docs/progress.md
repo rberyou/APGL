@@ -13,7 +13,7 @@ Last updated: 2026-05-29
 - Added backend pytest coverage for the core learning loop.
 - Created local `.venv` and installed backend dependencies without using global Python packages.
 - Installed frontend dependencies under `frontend/node_modules`.
-- Verified backend tests: `8 passed`.
+- Verified backend tests: `12 passed`.
 - Verified frontend production build with `npm run build`.
 - Started local backend and frontend dev servers.
 - Completed HTTP smoke test for register, skill project generation, lesson retrieval, quiz answer, mistake creation, and review queue.
@@ -23,6 +23,7 @@ Last updated: 2026-05-29
 - Added public `/api/config` so the frontend displays the backend-configured upload limit.
 - Verified MiniMax-compatible `.env` configuration and improved JSON extraction for providers that emit `<think>` blocks before JSON.
 - Added recovery path for projects with no generated lessons and isolated backend tests from the local development database.
+- Added latest generation job error display on project pages and made plan storage tolerant of provider responses that use string items.
 
 ## Current State
 

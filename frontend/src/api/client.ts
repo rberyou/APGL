@@ -101,6 +101,9 @@ export const api = {
   job(id: number) {
     return apiFetch<Job>(`/jobs/${id}`);
   },
+  latestProjectJob(projectId: number) {
+    return apiFetch<Job>(`/jobs/projects/${projectId}/latest`);
+  },
   lessons(projectId: number) {
     return apiFetch<Lesson[]>(`/projects/${projectId}/lessons`);
   },

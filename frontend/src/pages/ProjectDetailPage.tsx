@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, CheckCircle2, Play, Sparkles } from "lucide-react";
+import { BookOpen, CheckCircle2, Play, Sparkles, TriangleAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { EmptyState, ErrorMessage, LoadingBlock } from "../components/Layout";
@@ -26,11 +26,17 @@ export default function ProjectDetailPage() {
     queryFn: () => api.lessons(id),
     enabled: Number.isFinite(id)
   });
+  const latestJob = useQuery({
+    queryKey: ["latest-job", id],
+    queryFn: () => api.latestProjectJob(id),
+    enabled: Number.isFinite(id) && project.data?.status === "failed"
+  });
   const generateMutation = useMutation({
     mutationFn: () => api.generateProject(id),
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ["project", id] });
       queryClient.invalidateQueries({ queryKey: ["lessons", id] });
+      queryClient.invalidateQueries({ queryKey: ["latest-job", id] });
       if (response.job_id) {
         navigate(`/jobs/${response.job_id}?projectId=${response.project.id}`);
       }
@@ -57,6 +63,21 @@ export default function ProjectDetailPage() {
             {project.data?.status}
           </span>
         </div>
+        {project.data?.status === "failed" ? (
+          <div className="mt-5 rounded-md border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">
+            <div className="mb-1 flex items-center gap-2 font-bold">
+              <TriangleAlert size={16} aria-hidden="true" />
+              Generation failed
+            </div>
+            <p>
+              {latestJob.data?.error ||
+                "The latest generation job failed, but no detailed error was recorded."}
+            </p>
+            <p className="mt-2">
+              Check your LLM configuration, then use Generate learning path below to retry.
+            </p>
+          </div>
+        ) : null}
         <div className="mt-6">
           <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
             <span>Progress</span>

@@ -61,6 +61,8 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
 
     kp_rows: list[KnowledgePoint] = []
     for item in knowledge_points[:8]:
+        if not isinstance(item, dict):
+            item = {"name": str(item), "explanation": ""}
         row = KnowledgePoint(
             project_id=project.id,
             name=str(item.get("name") or "Knowledge point")[:160],
@@ -73,6 +75,8 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
         db.refresh(row)
 
     for lesson_index, item in enumerate(lessons[:6], start=1):
+        if not isinstance(item, dict):
+            item = {"title": f"Lesson {lesson_index}", "summary": str(item), "content": str(item)}
         lesson = LessonUnit(
             project_id=project.id,
             title=str(item.get("title") or f"Lesson {lesson_index}")[:200],
@@ -86,6 +90,13 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
 
         quiz_items = item.get("quiz") or []
         for quiz_index, quiz in enumerate(quiz_items[:3]):
+            if not isinstance(quiz, dict):
+                quiz = {
+                    "question_type": "short_answer",
+                    "prompt": str(quiz),
+                    "answer": "",
+                    "explanation": "",
+                }
             kp = kp_rows[(lesson_index + quiz_index - 1) % len(kp_rows)] if kp_rows else None
             db.add(
                 QuizItem(
