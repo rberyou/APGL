@@ -16,6 +16,7 @@ from app.models import (
 from app.schemas import AnswerCreate, AnswerResult, QuizItemRead
 from app.services.ai import AIServiceError
 from app.services.ai import grade_answer
+from app.services.learning import update_mastery_from_answer
 
 
 router = APIRouter(tags=["quiz"])
@@ -90,6 +91,15 @@ def answer_quiz_item(
         review_task_id = review.id
     else:
         db.commit()
+    update_mastery_from_answer(
+        db,
+        quiz.project_id,
+        user.id,
+        quiz.knowledge_point_id,
+        quiz.lesson_id,
+        graded["is_correct"],
+    )
+    db.commit()
 
     return AnswerResult(
         is_correct=graded["is_correct"],

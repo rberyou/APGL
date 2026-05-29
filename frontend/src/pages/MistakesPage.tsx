@@ -11,9 +11,9 @@ export default function MistakesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-ink">Mistake book</h1>
+        <h1 className="text-2xl font-bold text-ink">Weak point center</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Every wrong answer becomes a concrete weak point to revisit.
+          Wrong answers become reviewable weak points that guide the tutor's next sessions.
         </p>
       </div>
       {mistakes.error ? <ErrorMessage message={mistakes.error.message} /> : null}
@@ -59,4 +59,3 @@ export default function MistakesPage() {
     </div>
   );
 }
-

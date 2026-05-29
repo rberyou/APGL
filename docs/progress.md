@@ -29,11 +29,18 @@ Last updated: 2026-05-29
 - Re-verified after the development-standard update: backend tests `12 passed`; frontend `npm run build` passed.
 - Refined the development standard after review: clarified when progress/todo updates are required, added `.env` setup guidance, made test database isolation explicit, and converted LLM test expectations into an actionable checklist.
 - Refined the handoff standard again to warn agents not to overwrite existing `.env`, to use the existing `GET /api/config` endpoint for runtime-configurable frontend values, and to align Definition of Done with the progress/todo update exception.
+- Implemented the first APGL V2 tutor-platform slice: tutor profiles, project trackers, learning gaps, knowledge edges, lesson steps, study sessions, tutor messages, source citations, learning events, and material diagnostics.
+- Added SQLite FTS indexing for source chunks and tutor retrieval so material projects can search across all parsed chunks instead of only using the first few excerpts.
+- Added V2 APIs for project tracker, knowledge map, material status, lesson steps, tutor sessions, tutor messages, and session ending.
+- Upgraded the frontend Dashboard, Project Detail, Lesson, Review, and Weak Point views toward a multi-learning-space tutor workspace.
+- Expanded backend tests to cover material diagnostics, FTS-backed tutor sessions, knowledge map/tracker APIs, unreadable PDF errors, and existing learning flows.
+- Improved third-party LLM robustness after repeated generation failures: invalid JSON responses now get one automatic JSON repair attempt, nested provider payloads are unwrapped, and backend coverage includes the repair path.
+- Fixed a MiniMax-specific JSON parsing failure where an outer ```json fence was truncated by inner Markdown code fences inside JSON string content. The parser now scans the full response for a complete JSON object before trying fenced snippets, and plan storage accepts provider-shaped `title`/`description` knowledge points and single-object quiz payloads.
 
 ## Current State
 
-Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support. The repository now includes explicit AI handoff and development rules for interrupted or future AI-assisted work.
+Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support and the first V2 tutor-platform slice. The repository includes explicit AI handoff and development rules for interrupted or future AI-assisted work.
 
 ## Next Step
 
-Continue improving provider operations when prioritized: add frontend LLM settings, provider presets, and a connectivity test while keeping `AGENTS.md` and `docs/development.md` synchronized with workflow changes.
+Restart the backend, retry the failed project generation, and manually exercise the V2 tutor workflow with a real PDF and configured provider. Continue iterating on tutor prompt quality, source citation precision, and mastery/pass criteria.

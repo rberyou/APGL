@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { BookOpen, Clock, Plus, RotateCcw, TriangleAlert } from "lucide-react";
+import { BookOpen, Brain, Clock, Plus, RotateCcw, TriangleAlert } from "lucide-react";
 import { api } from "../api/client";
+import type { Project } from "../api/types";
 import { EmptyState, ErrorMessage, LoadingBlock } from "../components/Layout";
 
 export default function DashboardPage() {
@@ -50,38 +51,7 @@ export default function DashboardPage() {
       {projects.data?.length ? (
         <section className="grid gap-4 lg:grid-cols-2">
           {projects.data.map((project) => (
-            <Link
-              key={project.id}
-              to={`/projects/${project.id}`}
-              className="panel block transition hover:border-teal"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wide text-ember">
-                    {project.source_type}
-                  </span>
-                  <h2 className="mt-2 text-lg font-bold text-ink">{project.title}</h2>
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">
-                    {project.goal}
-                  </p>
-                </div>
-                <span className="rounded-md border border-line px-2 py-1 text-xs font-semibold text-slate-600">
-                  {project.status}
-                </span>
-              </div>
-              <div className="mt-5">
-                <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
-                  <span>Progress</span>
-                  <span>{project.progress_percent}%</span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-100">
-                  <div
-                    className="h-2 rounded-full bg-teal"
-                    style={{ width: `${project.progress_percent}%` }}
-                  />
-                </div>
-              </div>
-            </Link>
+            <ProjectCard key={project.id} project={project} />
           ))}
         </section>
       ) : (
@@ -97,6 +67,58 @@ export default function DashboardPage() {
         />
       )}
     </div>
+  );
+}
+
+function ProjectCard({ project }: { project: Project }) {
+  const tracker = useQuery({
+    queryKey: ["project-tracker", project.id],
+    queryFn: () => api.projectTracker(project.id)
+  });
+  const mastery = Math.round((tracker.data?.mastery ?? project.progress_percent / 100) * 100);
+  const nextPlan = tracker.data?.next_plan;
+  const gaps = tracker.data?.learning_gaps ?? [];
+
+  return (
+    <Link to={`/projects/${project.id}`} className="panel block transition hover:border-teal">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <span className="text-xs font-bold uppercase tracking-wide text-ember">
+            {project.source_type === "material" ? "Source library" : "Skill goal"}
+          </span>
+          <h2 className="mt-2 text-lg font-bold text-ink">{project.title}</h2>
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{project.goal}</p>
+        </div>
+        <span className="rounded-md border border-line px-2 py-1 text-xs font-semibold capitalize text-slate-600">
+          {project.status}
+        </span>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div>
+          <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+            <span>Mastery</span>
+            <span>{mastery}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-100">
+            <div className="h-2 rounded-full bg-teal" style={{ width: `${mastery}%` }} />
+          </div>
+        </div>
+        <div className="rounded-md bg-paper p-3">
+          <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <Brain size={14} aria-hidden="true" />
+            Next tutor move
+          </div>
+          <p className="line-clamp-2 text-sm leading-5 text-slate-700">
+            {nextPlan || "Open the learning space to continue."}
+          </p>
+        </div>
+      </div>
+      {gaps.length ? (
+        <div className="mt-3 text-xs font-semibold text-amber-700">
+          {gaps.length} weak area{gaps.length > 1 ? "s" : ""} need review
+        </div>
+      ) : null}
+    </Link>
   );
 }
 

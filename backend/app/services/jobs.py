@@ -1,6 +1,6 @@
 import json
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from app.database import engine
 from app.models import (
@@ -9,12 +9,15 @@ from app.models import (
     LearningProject,
     LessonUnit,
     QuizItem,
+    SourceCitation,
     SourceChunk,
     SourceMaterial,
     utc_now,
 )
 from app.services.ai import generate_material_plan, generate_skill_plan
+from app.services.learning import ensure_project_state
 from app.services.materials import chunk_text
+from app.services.retrieval import clear_project_index, index_source_chunks
 
 
 def create_job(
@@ -53,7 +56,12 @@ def _set_project_status(db: Session, project_id: int, status: str) -> None:
         db.commit()
 
 
-def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
+def _store_plan(
+    db: Session,
+    project: LearningProject,
+    plan: dict,
+    source_chunks: list[SourceChunk] | None = None,
+) -> None:
     knowledge_points = plan.get("knowledge_points") or []
     lessons = plan.get("lessons") or []
     if not lessons:
@@ -65,8 +73,8 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
             item = {"name": str(item), "explanation": ""}
         row = KnowledgePoint(
             project_id=project.id,
-            name=str(item.get("name") or "Knowledge point")[:160],
-            explanation=str(item.get("explanation") or ""),
+            name=str(item.get("name") or item.get("title") or "Knowledge point")[:160],
+            explanation=str(item.get("explanation") or item.get("description") or ""),
         )
         db.add(row)
         kp_rows.append(row)
@@ -74,7 +82,7 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
     for row in kp_rows:
         db.refresh(row)
 
-    for lesson_index, item in enumerate(lessons[:6], start=1):
+    for lesson_index, item in enumerate(lessons[:8], start=1):
         if not isinstance(item, dict):
             item = {"title": f"Lesson {lesson_index}", "summary": str(item), "content": str(item)}
         lesson = LessonUnit(
@@ -87,8 +95,22 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
         db.add(lesson)
         db.commit()
         db.refresh(lesson)
+        if source_chunks:
+            chunk = source_chunks[(lesson_index - 1) % len(source_chunks)]
+            if chunk.id:
+                db.add(
+                    SourceCitation(
+                        project_id=project.id,
+                        source_chunk_id=chunk.id,
+                        lesson_id=lesson.id,
+                        label=chunk.locator or chunk.title,
+                        excerpt=chunk.content[:500],
+                    )
+                )
 
         quiz_items = item.get("quiz") or []
+        if isinstance(quiz_items, dict):
+            quiz_items = [quiz_items]
         for quiz_index, quiz in enumerate(quiz_items[:3]):
             if not isinstance(quiz, dict):
                 quiz = {
@@ -114,6 +136,7 @@ def _store_plan(db: Session, project: LearningProject, plan: dict) -> None:
     project.updated_at = utc_now()
     db.add(project)
     db.commit()
+    ensure_project_state(db, project)
 
 
 def process_skill_job(job_id: int) -> None:
@@ -148,7 +171,12 @@ def process_material_job(job_id: int) -> None:
 
             chunks = chunk_text(material.raw_text)
             if not chunks:
-                raise ValueError("No readable text found in material")
+                raise ValueError(
+                    "No readable text found in material. Scanned PDFs and OCR are not supported in this version."
+                )
+            db.exec(delete(SourceChunk).where(SourceChunk.project_id == project.id))
+            clear_project_index(db, project.id)
+            db.commit()
             chunk_rows: list[SourceChunk] = []
             for item in chunks:
                 row = SourceChunk(
@@ -162,7 +190,13 @@ def process_material_job(job_id: int) -> None:
                 db.add(row)
                 chunk_rows.append(row)
             material.status = "processed"
+            material.chunk_count = len(chunk_rows)
+            material.character_count = len(material.raw_text)
             db.add(material)
+            db.commit()
+            for row in chunk_rows:
+                db.refresh(row)
+            index_source_chunks(db, chunk_rows)
             db.commit()
 
             plan = generate_material_plan(
@@ -170,7 +204,7 @@ def process_material_job(job_id: int) -> None:
                 project.goal,
                 [row.content for row in chunk_rows],
             )
-            _store_plan(db, project, plan)
+            _store_plan(db, project, plan, chunk_rows)
             _set_job_status(db, job, "completed")
         except Exception as exc:
             _set_project_status(db, job.project_id, "failed")

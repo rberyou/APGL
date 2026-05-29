@@ -35,6 +35,30 @@ class LearningProject(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class TutorProfile(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, unique=True, foreign_key="learningproject.id")
+    teaching_style: str = "socratic"
+    response_rules: str = (
+        "Ask what the learner already understands, explain in short chunks, "
+        "check understanding, and cite source material when available."
+    )
+    require_citations: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectTracker(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, unique=True, foreign_key="learningproject.id")
+    mastery: float = 0.0
+    mastered_topics_json: str = "[]"
+    learning_gaps_json: str = "[]"
+    next_plan: str = "Start the first tutor session."
+    last_session_id: int | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class SourceMaterial(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(index=True, foreign_key="learningproject.id")
@@ -42,6 +66,10 @@ class SourceMaterial(SQLModel, table=True):
     content_type: str
     raw_text: str
     status: str = Field(default="uploaded", index=True)
+    page_count: int = 0
+    text_page_count: int = 0
+    character_count: int = 0
+    chunk_count: int = 0
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -64,6 +92,14 @@ class KnowledgePoint(SQLModel, table=True):
     source_chunk_id: int | None = Field(default=None, foreign_key="sourcechunk.id")
 
 
+class KnowledgeEdge(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    source_id: int = Field(index=True, foreign_key="knowledgepoint.id")
+    target_id: int = Field(index=True, foreign_key="knowledgepoint.id")
+    relation_type: str = Field(default="related_to", index=True)
+
+
 class LessonUnit(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(index=True, foreign_key="learningproject.id")
@@ -73,6 +109,16 @@ class LessonUnit(SQLModel, table=True):
     order_index: int = Field(index=True)
     status: str = Field(default="pending", index=True)
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class LessonStep(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    lesson_id: int = Field(index=True, foreign_key="lessonunit.id")
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    step_type: str = Field(default="explain", index=True)
+    title: str
+    body: str
+    order_index: int = Field(index=True)
 
 
 class QuizItem(SQLModel, table=True):
@@ -115,6 +161,63 @@ class ReviewTask(SQLModel, table=True):
     mistake_id: int | None = Field(default=None, foreign_key="mistakerecord.id")
     due_at: datetime = Field(index=True)
     status: str = Field(default="pending", index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class LearningGap(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    knowledge_point_id: int | None = Field(default=None, foreign_key="knowledgepoint.id")
+    title: str
+    severity: str = Field(default="medium", index=True)
+    status: str = Field(default="open", index=True)
+    evidence: str = ""
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class StudySession(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    user_id: int = Field(index=True, foreign_key="user.id")
+    lesson_id: int | None = Field(default=None, index=True, foreign_key="lessonunit.id")
+    status: str = Field(default="active", index=True)
+    focus: str = ""
+    summary: str | None = None
+    next_plan: str | None = None
+    started_at: datetime = Field(default_factory=utc_now)
+    ended_at: datetime | None = None
+
+
+class TutorMessage(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: int = Field(index=True, foreign_key="studysession.id")
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    user_id: int = Field(index=True, foreign_key="user.id")
+    role: str = Field(index=True)
+    content: str
+    citations_json: str = "[]"
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class SourceCitation(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    source_chunk_id: int = Field(index=True, foreign_key="sourcechunk.id")
+    lesson_id: int | None = Field(default=None, index=True, foreign_key="lessonunit.id")
+    lesson_step_id: int | None = Field(default=None, index=True, foreign_key="lessonstep.id")
+    tutor_message_id: int | None = Field(default=None, index=True, foreign_key="tutormessage.id")
+    label: str
+    excerpt: str = ""
+
+
+class LearningEvent(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    user_id: int = Field(index=True, foreign_key="user.id")
+    event_type: str = Field(index=True)
+    knowledge_point_id: int | None = Field(default=None, foreign_key="knowledgepoint.id")
+    lesson_id: int | None = Field(default=None, foreign_key="lessonunit.id")
+    metadata_json: str = "{}"
     created_at: datetime = Field(default_factory=utc_now)
 
 

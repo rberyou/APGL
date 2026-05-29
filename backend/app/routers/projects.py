@@ -6,6 +6,7 @@ from app.deps import get_current_user
 from app.models import Job, LearningProject, LessonUnit, SourceMaterial, User, utc_now
 from app.schemas import ProjectCreate, ProjectCreateResponse, ProjectRead
 from app.services.jobs import create_job, process_material_job, process_skill_job
+from app.services.learning import ensure_project_state
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -41,6 +42,7 @@ def create_project(
     db.add(project)
     db.commit()
     db.refresh(project)
+    ensure_project_state(db, project)
 
     job_id = None
     if payload.source_type == "skill":

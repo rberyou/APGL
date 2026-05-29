@@ -26,7 +26,7 @@ export default function ReviewsPage() {
       <div>
         <h1 className="text-2xl font-bold text-ink">Today&apos;s review</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Revisit weak points while they are still fresh.
+          Revisit weak points and feed the result back into your project mastery.
         </p>
       </div>
       {reviews.error ? <ErrorMessage message={reviews.error.message} /> : null}
@@ -73,4 +73,3 @@ export default function ReviewsPage() {
     </div>
   );
 }
-

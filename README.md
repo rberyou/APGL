@@ -1,6 +1,6 @@
 # APGL - AI Powered Guided Learning
 
-APGL is a local-first MVP for AI guided learning. It turns a skill goal or uploaded material into a small learning project with lessons, quiz checks, mistakes, and review tasks.
+APGL is a local-first AI tutor workspace. It helps learners manage multiple learning spaces, turn skill goals or uploaded material into knowledge maps and lessons, study with a tutor chat, track weak points, and schedule review.
 
 ## Stack
 
@@ -25,7 +25,7 @@ cd frontend
 npm install
 ```
 
-Create local environment values:
+Create local environment values only if `.env` does not already exist:
 
 ```powershell
 Copy-Item .env.example .env
@@ -90,5 +90,5 @@ npm run build
 
 - Do not install Python packages globally. Always use `.\.venv\Scripts\python -m pip`.
 - Local database files live under `backend/data/` and are ignored by Git.
-- Update `docs/progress.md` and `docs/todo.md` before pausing work.
+- Update `docs/progress.md` and `docs/todo.md` before pausing meaningful behavior, architecture, configuration, test, or user-visible work.
 - Material uploads accept PDF, Markdown, and plain text files up to the configured `MAX_UPLOAD_BYTES` limit.

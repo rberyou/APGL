@@ -11,3 +11,9 @@
 - Keep deterministic mock AI fallback so development and tests work without an API key.
 - Preserve remote Git history from `git@github.com:rberyou/APGL.git`; no force push.
 
+## 2026-05-29
+
+- Upgrade APGL toward a multi-learning-space AI tutor platform rather than a static lesson generator.
+- Use SQLite FTS for V2 source retrieval so large PDF/text material can be searched without adding embeddings or a vector database yet.
+- Keep video, web links, OCR, and vector retrieval out of V2 to focus on reliable PDF/Markdown/text learning.
+- Store tutor sessions, messages, citations, trackers, and learning gaps in the database instead of requiring users to manage Markdown session files.

@@ -1,17 +1,20 @@
 import json
 import os
+from io import BytesIO
 from types import SimpleNamespace
 
 os.environ["DATABASE_URL"] = "sqlite:///./backend/data/test.db"
 
 import pytest
+from pypdf import PdfWriter
+from sqlalchemy import text
 from sqlmodel import SQLModel, Session, select
 from starlette.testclient import TestClient
 
 from app.config import settings
-from app.database import engine
+from app.database import engine, init_db
 from app.main import app
-from app.models import LearningProject, LessonUnit
+from app.models import KnowledgePoint, LearningProject, LessonUnit
 from app.services import ai
 from app.services import jobs
 
@@ -43,8 +46,10 @@ def mock_ai_by_default():
 
 
 def reset_db() -> None:
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS source_chunk_fts"))
     SQLModel.metadata.drop_all(engine)
-    SQLModel.metadata.create_all(engine)
+    init_db()
 
 
 def auth_client() -> TestClient:
@@ -180,6 +185,48 @@ def test_store_plan_accepts_string_items():
         assert len(lessons) == 1
 
 
+def test_store_plan_accepts_provider_title_description_and_quiz_object():
+    reset_db()
+    with Session(engine) as db:
+        project = LearningProject(
+            user_id=1,
+            title="Git",
+            goal="Learn Git.",
+            source_type="skill",
+            status="generating",
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+
+        jobs._store_plan(
+            db,
+            project,
+            {
+                "knowledge_points": [
+                    {"title": "Git objects", "description": "Blob, tree, commit."}
+                ],
+                "lessons": [
+                    {
+                        "title": "Git internals",
+                        "summary": "Understand objects.",
+                        "content": "Study object storage.",
+                        "quiz": {
+                            "question_type": "short_answer",
+                            "prompt": "What does a blob store?",
+                            "answer": "File content.",
+                            "explanation": "Blob objects do not store filenames.",
+                        },
+                    }
+                ],
+            },
+        )
+
+        point = db.exec(select(KnowledgePoint).where(KnowledgePoint.project_id == project.id)).first()
+        assert point.name == "Git objects"
+        assert "Blob" in point.explanation
+
+
 def test_skill_project_generates_lessons():
     client = auth_client()
     response = client.post(
@@ -255,6 +302,106 @@ def test_material_upload_quiz_mistake_and_review_flow():
     mistakes = client.get("/api/mistakes")
     assert mistakes.status_code == 200
     assert len(mistakes.json()) == 1
+
+
+def test_v2_material_tracker_knowledge_map_and_tutor_session():
+    client = auth_client()
+    project_response = client.post(
+        "/api/projects",
+        json={
+            "title": "Vulkan specification",
+            "goal": "Understand Vulkan queue submission and synchronization.",
+            "source_type": "material",
+            "current_level": "Intermediate",
+            "time_budget_minutes": 45,
+        },
+    )
+    project_id = project_response.json()["project"]["id"]
+
+    upload = client.post(
+        f"/api/projects/{project_id}/materials",
+        files={
+            "file": (
+                "vulkan.md",
+                (
+                    b"# Vulkan queues\n\n"
+                    b"Queue submission sends command buffers to device queues.\n\n"
+                    b"# Synchronization\n\n"
+                    b"Semaphores and fences coordinate GPU and CPU work."
+                ),
+                "text/markdown",
+            )
+        },
+    )
+    assert upload.status_code == 200
+    assert client.get(f"/api/jobs/{upload.json()['job_id']}").json()["status"] == "completed"
+
+    status = client.get(f"/api/projects/{project_id}/materials/status")
+    assert status.status_code == 200
+    assert status.json()["chunk_count"] >= 1
+    assert status.json()["readable"] is True
+
+    tracker = client.get(f"/api/projects/{project_id}/tracker")
+    assert tracker.status_code == 200
+    assert tracker.json()["next_plan"]
+
+    knowledge_map = client.get(f"/api/projects/{project_id}/knowledge-map")
+    assert knowledge_map.status_code == 200
+    assert knowledge_map.json()["nodes"]
+
+    lessons = client.get(f"/api/projects/{project_id}/lessons").json()
+    steps = client.get(f"/api/lessons/{lessons[0]['id']}/steps")
+    assert steps.status_code == 200
+    assert len(steps.json()) >= 3
+
+    session = client.post(
+        f"/api/projects/{project_id}/sessions",
+        json={"lesson_id": lessons[0]["id"], "focus": "Queue submission"},
+    )
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+    initial_messages = client.get(f"/api/sessions/{session_id}/messages")
+    assert initial_messages.status_code == 200
+    assert initial_messages.json()[0]["role"] == "assistant"
+
+    reply = client.post(
+        f"/api/sessions/{session_id}/messages",
+        json={"content": "How do queues relate to synchronization?"},
+    )
+    assert reply.status_code == 200
+    assert "Check yourself" in reply.json()["content"]
+    assert reply.json()["citations"]
+
+    closed = client.post(f"/api/sessions/{session_id}/end")
+    assert closed.status_code == 200
+    assert closed.json()["status"] == "completed"
+    assert closed.json()["summary"]
+
+
+def test_blank_pdf_upload_returns_ocr_message():
+    client = auth_client()
+    project_response = client.post(
+        "/api/projects",
+        json={
+            "title": "Blank PDF",
+            "goal": "Test unreadable PDFs.",
+            "source_type": "material",
+            "current_level": "Beginner",
+            "time_budget_minutes": 20,
+        },
+    )
+    project_id = project_response.json()["project"]["id"]
+    pdf = PdfWriter()
+    pdf.add_blank_page(width=72, height=72)
+    data = BytesIO()
+    pdf.write(data)
+
+    upload = client.post(
+        f"/api/projects/{project_id}/materials",
+        files={"file": ("blank.pdf", data.getvalue(), "application/pdf")},
+    )
+    assert upload.status_code == 400
+    assert "OCR" in upload.json()["detail"]
 
 
 def test_material_upload_size_limit_message():
@@ -356,6 +503,100 @@ def test_chat_completions_response_generates_plan(monkeypatch):
 
     assert plan["lessons"][0]["title"] == "Provider lesson"
     assert plan["knowledge_points"][0]["name"] == "Concept"
+
+
+def test_chat_completions_response_repairs_invalid_json(monkeypatch):
+    class FakeCompletions:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(
+                                content="Sure, here is the plan:\nknowledge_points: Concept"
+                            )
+                        )
+                    ]
+                )
+            content = {
+                "knowledge_points": [
+                    {"name": "Repaired concept", "explanation": "Recovered JSON."}
+                ],
+                "lessons": [
+                    {
+                        "title": "Repaired lesson",
+                        "summary": "Valid after repair.",
+                        "content": "Study the recovered content.",
+                        "quiz": [],
+                    }
+                ],
+            }
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=json.dumps(content))
+                    )
+                ]
+            )
+
+    completions = FakeCompletions()
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    settings.apgl_mock_ai = False
+    settings.llm_api_key = "test-key"
+    settings.llm_base_url = "https://provider.example.com/v1"
+    settings.llm_model_smart = "provider-smart"
+    monkeypatch.setattr(ai, "_client", lambda: fake_client)
+
+    plan = ai.generate_skill_plan("Git", "Learn Git.", "Beginner")
+
+    assert completions.calls == 2
+    assert plan["lessons"][0]["title"] == "Repaired lesson"
+
+
+def test_json_parser_unwraps_nested_provider_payload():
+    content = json.dumps(
+        {
+            "result": {
+                "knowledge_points": [{"name": "Nested", "explanation": "Wrapped"}],
+                "lessons": [{"title": "Nested lesson"}],
+            }
+        }
+    )
+    assert ai._json_from_text(content) == {
+        "knowledge_points": [{"name": "Nested", "explanation": "Wrapped"}],
+        "lessons": [{"title": "Nested lesson"}],
+    }
+
+
+def test_json_parser_handles_fenced_json_with_inner_markdown_code_fences():
+    content = """<think>reasoning</think>
+
+```json
+{
+  "knowledge_points": [{"title": "Git", "description": "Version control"}],
+  "lessons": [
+    {
+      "title": "Git commands",
+      "summary": "Practice commands",
+      "content": "Run this:\\n```bash\\ngit status\\n```",
+      "quiz": {
+        "question_type": "short_answer",
+        "prompt": "What command checks status?",
+        "answer": "git status",
+        "explanation": "It shows working tree state."
+      }
+    }
+  ]
+}
+```
+"""
+    parsed = ai._json_from_text(content)
+    assert parsed is not None
+    assert parsed["lessons"][0]["content"].endswith("```")
 
 
 def test_json_parser_handles_reasoning_text_before_json():

@@ -2,13 +2,19 @@ import type {
   AnswerResult,
   AppConfig,
   Job,
+  KnowledgeMap,
   Lesson,
+  LessonStep,
   MaterialUploadResponse,
+  MaterialStatus,
   Mistake,
   Project,
   ProjectCreateResponse,
+  ProjectTracker,
   QuizItem,
   ReviewTask,
+  StudySession,
+  TutorMessage,
   User
 } from "./types";
 
@@ -98,6 +104,9 @@ export const api = {
       body: formData
     });
   },
+  materialStatus(projectId: number) {
+    return apiFetch<MaterialStatus>(`/projects/${projectId}/materials/status`);
+  },
   job(id: number) {
     return apiFetch<Job>(`/jobs/${id}`);
   },
@@ -109,6 +118,9 @@ export const api = {
   },
   lesson(id: number) {
     return apiFetch<Lesson>(`/lessons/${id}`);
+  },
+  lessonSteps(id: number) {
+    return apiFetch<LessonStep[]>(`/lessons/${id}/steps`);
   },
   completeLesson(id: number) {
     return apiFetch<Lesson>(`/lessons/${id}/complete`, { method: "POST" });
@@ -133,5 +145,32 @@ export const api = {
   },
   mistakes() {
     return apiFetch<Mistake[]>("/mistakes");
+  },
+  projectTracker(projectId: number) {
+    return apiFetch<ProjectTracker>(`/projects/${projectId}/tracker`);
+  },
+  knowledgeMap(projectId: number) {
+    return apiFetch<KnowledgeMap>(`/projects/${projectId}/knowledge-map`);
+  },
+  sessions(projectId: number) {
+    return apiFetch<StudySession[]>(`/projects/${projectId}/sessions`);
+  },
+  startSession(projectId: number, body: { lesson_id?: number | null; focus?: string | null }) {
+    return apiFetch<StudySession>(`/projects/${projectId}/sessions`, {
+      method: "POST",
+      body: jsonBody(body)
+    });
+  },
+  sessionMessages(sessionId: number) {
+    return apiFetch<TutorMessage[]>(`/sessions/${sessionId}/messages`);
+  },
+  sendTutorMessage(sessionId: number, content: string) {
+    return apiFetch<TutorMessage>(`/sessions/${sessionId}/messages`, {
+      method: "POST",
+      body: jsonBody({ content })
+    });
+  },
+  endSession(sessionId: number) {
+    return apiFetch<StudySession>(`/sessions/${sessionId}/end`, { method: "POST" });
   }
 };
