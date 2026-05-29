@@ -2,10 +2,12 @@
 
 ## P0
 
-- Configure and manually verify the target third-party LLM provider in `.env`.
+- No active P0 items.
 
 ## P1
 
+- Keep `AGENTS.md` and `docs/development.md` synchronized with future workflow, verification, and security rule changes.
+- Re-run a real provider smoke test whenever `LLM_*` settings change.
 - Add API pagination for projects and mistake records.
 - Add richer material chunk source references for PDF pages and Markdown headings.
 - Add project-level knowledge point view in the frontend.

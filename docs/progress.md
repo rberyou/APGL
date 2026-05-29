@@ -24,11 +24,16 @@ Last updated: 2026-05-29
 - Verified MiniMax-compatible `.env` configuration and improved JSON extraction for providers that emit `<think>` blocks before JSON.
 - Added recovery path for projects with no generated lessons and isolated backend tests from the local development database.
 - Added latest generation job error display on project pages and made plan storage tolerant of provider responses that use string items.
+- Added `AGENTS.md` as the first-stop AI handoff guide for future agents and developers.
+- Added `docs/development.md` as the complete development standard for backend, frontend, LLM, testing, docs, Git, and recovery workflows.
+- Re-verified after the development-standard update: backend tests `12 passed`; frontend `npm run build` passed.
+- Refined the development standard after review: clarified when progress/todo updates are required, added `.env` setup guidance, made test database isolation explicit, and converted LLM test expectations into an actionable checklist.
+- Refined the handoff standard again to warn agents not to overwrite existing `.env`, to use the existing `GET /api/config` endpoint for runtime-configurable frontend values, and to align Definition of Done with the progress/todo update exception.
 
 ## Current State
 
-Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support.
+Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support. The repository now includes explicit AI handoff and development rules for interrupted or future AI-assisted work.
 
 ## Next Step
 
-Configure `LLM_API_KEY`, `LLM_BASE_URL`, and provider model names in `.env`, then create a new learning project to verify the chosen provider.
+Continue improving provider operations when prioritized: add frontend LLM settings, provider presets, and a connectivity test while keeping `AGENTS.md` and `docs/development.md` synchronized with workflow changes.
