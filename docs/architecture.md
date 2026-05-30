@@ -33,7 +33,8 @@ flowchart LR
 
 - React Router owns page navigation.
 - TanStack Query owns server state and polling.
-- Vite proxies `/api` requests to `http://127.0.0.1:8000`.
+- Vite proxies `/api` requests to `APGL_API_PROXY_TARGET`, defaulting to
+  `http://127.0.0.1:8000`.
 - Pages are task-oriented: Dashboard, Create Project, Job Status, Project Detail, Lesson, Review, Mistake Book.
 - Project detail shows tracker, source diagnostics, knowledge map, session history, and lesson path.
 - Lesson pages are tutor workspaces with structured steps, tutor chat, citations, and checks.

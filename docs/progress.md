@@ -37,11 +37,14 @@ Last updated: 2026-05-30
 - Improved third-party LLM robustness after repeated generation failures: invalid JSON responses now get one automatic JSON repair attempt, nested provider payloads are unwrapped, and backend coverage includes the repair path.
 - Fixed a MiniMax-specific JSON parsing failure where an outer ```json fence was truncated by inner Markdown code fences inside JSON string content. The parser now scans the full response for a complete JSON object before trying fenced snippets, and plan storage accepts provider-shaped `title`/`description` knowledge points and single-object quiz payloads.
 - Captured the next V2 learning-flow optimization plan in `docs/v2-learning-flow-optimization-plan.md`, covering staged generation, job timeline UX, retry/resume, explicit lesson-to-knowledge mapping, dynamic tutor assessment, and removal of manual lesson completion from the primary flow.
+- Reviewed and refined the V2 learning-flow optimization plan from a senior architecture perspective. The plan now clarifies resumable material uploads, schema-specific LLM parsing, idempotent retry/resume, lesson preparation boundaries, assessment compatibility with existing review/mistake tables, and product decisions for the V2 implementation.
+- Resolved the V2 product decisions in the plan and decisions log: material projects upload files during creation, assessments continue until mastery and can be resumed, low-score answers enter review, projects auto-mark as passed when criteria are met, and generation recovery uses a single `Continue generation` action with explanatory copy.
+- Prepared parallel worktree implementation support by making the Vite dev server port and API proxy target configurable through `APGL_FRONTEND_PORT` and `APGL_API_PROXY_TARGET`.
 
 ## Current State
 
-Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support and the first V2 tutor-platform slice. The repository includes explicit AI handoff and development rules for interrupted or future AI-assisted work. The next optimization direction is planned but not implemented yet.
+Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support and the first V2 tutor-platform slice. The repository includes explicit AI handoff and development rules for interrupted or future AI-assisted work. The next optimization direction is planned, architecture-reviewed, and product decisions are resolved, but not implemented yet.
 
 ## Next Step
 
-Implement `docs/v2-learning-flow-optimization-plan.md`: staged project generation, persisted job stages/artifacts, retry/resume, explicit knowledge-point lesson mapping, and dynamic tutor assessment that updates mastery without manual lesson completion.
+Implement staged project generation, persisted job stages/artifacts, retry/resume, explicit knowledge-point lesson mapping, and dynamic tutor assessment that updates mastery without manual lesson completion.

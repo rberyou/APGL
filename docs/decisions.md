@@ -24,3 +24,8 @@
 - Use knowledge-point mastery as the canonical progress signal. Lessons are learning containers, not manually completed tasks.
 - Replace fixed pre-generated lesson check questions with dynamic tutor assessment that asks questions at learning time and updates mastery, weak points, and review tasks.
 - Require explicit lesson-to-knowledge-point mapping so every knowledge point has a visible learning action.
+- For V2 material projects, require the learning file during project creation rather than keeping create and upload as separate primary user actions.
+- Continue lesson assessment until the lesson mastery threshold is reached, while preserving unfinished assessments so learners can leave and resume later.
+- Send low-score assessment answers to review, not only answers marked strictly incorrect.
+- Automatically mark projects as `passed` when mastery and open-gap criteria are satisfied.
+- Use one learner-facing generation recovery action, `Continue generation`, with explanatory copy instead of separate retry/resume buttons.
