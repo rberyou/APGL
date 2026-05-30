@@ -675,7 +675,7 @@ def _ensure_assessment_turn(
     if not point:
         return
     recent = [
-        _turn_payload(turn)
+        _turn_prompt_payload(turn)
         for turn in db.exec(
             select(AssessmentTurn)
             .where(AssessmentTurn.assessment_id == assessment.id)
@@ -828,6 +828,7 @@ def _turn_payload(turn: AssessmentTurn | None) -> dict | None:
         citations = json.loads(turn.citations_json or "[]")
     except json.JSONDecodeError:
         citations = []
+    citations = _citation_list(citations)
     return {
         "id": turn.id,
         "assessment_id": turn.assessment_id,
@@ -843,10 +844,48 @@ def _turn_payload(turn: AssessmentTurn | None) -> dict | None:
         "mastery_delta": turn.mastery_delta,
         "missing_concepts": missing if isinstance(missing, list) else [],
         "next_action": turn.next_action or ("expected: " + str(expected) if expected and turn.status == "answered" else None),
-        "citations": citations if isinstance(citations, list) else [],
+        "citations": citations,
         "created_at": turn.created_at,
         "answered_at": turn.answered_at,
     }
+
+
+def _turn_prompt_payload(turn: AssessmentTurn) -> dict:
+    payload = _turn_payload(turn) or {}
+    return {
+        "question": payload.get("question"),
+        "status": payload.get("status"),
+        "score": payload.get("score"),
+        "feedback": payload.get("feedback"),
+        "missing_concepts": payload.get("missing_concepts") or [],
+        "next_action": payload.get("next_action"),
+    }
+
+
+def _citation_list(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict] = []
+    for item in value[:5]:
+        if isinstance(item, dict):
+            result.append(
+                {
+                    "chunk_id": item.get("chunk_id") or item.get("source_chunk_id"),
+                    "title": str(item.get("title") or item.get("label") or "Assessment context"),
+                    "locator": item.get("locator"),
+                    "excerpt": str(item.get("excerpt") or item.get("text") or "")[:500],
+                }
+            )
+        else:
+            result.append(
+                {
+                    "chunk_id": None,
+                    "title": "Assessment context",
+                    "locator": None,
+                    "excerpt": str(item)[:500],
+                }
+            )
+    return result
 
 
 def _kp_dict(point: KnowledgePoint | None) -> dict:

@@ -181,6 +181,36 @@ def _response_json(
     return repaired
 
 
+def _response_json_or_text_answer(
+    model: str,
+    system: str,
+    user: str,
+    expected_keys: set[str] | None = None,
+    validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any] | None:
+    client = _client()
+    if client is None:
+        return None
+    text = _chat_text(client, model, system, user)
+    parsed = _json_from_text(text, expected_keys, validator)
+    if parsed is not None:
+        return parsed
+
+    repaired_text = _repair_json_text(client, model, system, user, text)
+    repaired = _json_from_text(repaired_text, expected_keys, validator)
+    if repaired is not None:
+        return repaired
+
+    fallback = (repaired_text or text).strip()
+    if not fallback:
+        raise AIResponseError("LLM returned empty tutor content.")
+    return {
+        "answer": fallback,
+        "follow_up_questions": [],
+        "suggested_actions": ["Ask a follow-up question", "Try answering in your own words"],
+    }
+
+
 def _chat_text(client: OpenAI, model: str, system: str, user: str) -> str:
     try:
         response = client.chat.completions.create(
@@ -635,7 +665,7 @@ def grade_answer(prompt: str, expected: str, submitted: str) -> dict[str, Any]:
         f"Question: {prompt}\nExpected answer: {expected}\nLearner answer: {submitted}\n"
         "Mark correct only if the core idea is present."
     )
-    data = _response_json(_model_smart(), system, user)
+    data = _response_json_or_text_answer(_model_smart(), system, user, {"answer"})
     if data and isinstance(data.get("is_correct"), bool):
         return {
             "is_correct": data["is_correct"],

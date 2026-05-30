@@ -574,8 +574,10 @@ def _replace_lesson_plan(db: Session, project: LearningProject, data: dict[str, 
 
 
 def _create_lesson_steps(db: Session, lesson: LessonUnit, data: dict[str, Any]) -> None:
-    examples = "\n".join(f"- {item}" for item in (data.get("examples") or [])[:4])
-    practice = "\n".join(f"- {item}" for item in (data.get("practice_suggestions") or [])[:4])
+    examples = "\n".join(f"- {item}" for item in _string_list(data.get("examples"))[:4])
+    practice = "\n".join(
+        f"- {item}" for item in _string_list(data.get("practice_suggestions"))[:4]
+    )
     steps = [
         ("orient", "Set the target", lesson.summary or "Clarify what this lesson is for."),
         ("explain", "Tutor explanation", lesson.content or "Ask the tutor to prepare this lesson."),
@@ -657,6 +659,28 @@ def _store_plan(
     db.add(project)
     db.commit()
     ensure_project_state(db, project)
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else []
+    if not isinstance(value, list):
+        value = [value]
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            text = item.get("activity") or item.get("title") or item.get("instructions") or item
+            if isinstance(text, dict):
+                text = json.dumps(text, ensure_ascii=False)
+        else:
+            text = item
+        cleaned = str(text).strip()
+        if cleaned:
+            result.append(cleaned)
+    return result
 
 
 def _active_artifact(db: Session, project_id: int, stage_key: str, input_hash: str) -> GenerationArtifact | None:
@@ -941,4 +965,3 @@ def _has_mapping(db: Session, lesson_id: int, point_id: int | None) -> bool:
 
 def _stage_progress(completed_index: int) -> int:
     return min(100, int((completed_index / max(1, len(STAGES))) * 100))
-

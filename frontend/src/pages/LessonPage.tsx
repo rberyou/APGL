@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { BookOpen, Brain, MessageSquare, Send, Sparkles } from "lucide-react";
@@ -11,6 +11,7 @@ export default function LessonPage() {
   const id = Number(lessonId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const assessmentSectionRef = useRef<HTMLElement | null>(null);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [assessmentId, setAssessmentId] = useState<number | null>(null);
   const [assessmentAnswer, setAssessmentAnswer] = useState("");
@@ -58,6 +59,9 @@ export default function LessonPage() {
       setAssessmentId(data.id);
       queryClient.invalidateQueries({ queryKey: ["lesson", id] });
       queryClient.invalidateQueries({ queryKey: ["project-tracker", data.project_id] });
+      window.setTimeout(() => {
+        assessmentSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
     }
   });
 
@@ -153,7 +157,11 @@ export default function LessonPage() {
                 onClick={() => startAssessmentMutation.mutate()}
               >
                 <Brain size={16} aria-hidden="true" />
-                {activeAssessment ? "Continue quiz" : "Quiz me"}
+                {startAssessmentMutation.isPending
+                  ? "Starting quiz"
+                  : activeAssessment
+                    ? "Continue quiz"
+                    : "Quiz me"}
               </button>
             )}
             {lesson.data ? (
@@ -195,16 +203,31 @@ export default function LessonPage() {
           )}
         </section>
 
-        <section className="panel">
+        <section className="panel" ref={assessmentSectionRef}>
           <div className="mb-4 flex items-center gap-2">
             <Brain className="text-teal" size={20} aria-hidden="true" />
             <h2 className="text-lg font-bold text-ink">Dynamic assessment</h2>
           </div>
+          {startAssessmentMutation.error ? (
+            <div className="mb-4">
+              <ErrorMessage message={startAssessmentMutation.error.message} />
+            </div>
+          ) : null}
           {!activeAssessment ? (
-            <p className="text-sm leading-6 text-slate-600">
-              Start a tutor assessment when you are ready. APGL will ask one question at a time and
-              update mastery from your answers.
-            </p>
+            <div className="space-y-4">
+              <p className="text-sm leading-6 text-slate-600">
+                Start a tutor assessment when you are ready. APGL will ask one question at a time and
+                update mastery from your answers.
+              </p>
+              <button
+                className="btn-primary"
+                disabled={startAssessmentMutation.isPending || !lesson.data?.content}
+                onClick={() => startAssessmentMutation.mutate()}
+              >
+                <Brain size={16} aria-hidden="true" />
+                {startAssessmentMutation.isPending ? "Starting quiz" : "Quiz me"}
+              </button>
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="rounded-md bg-paper p-3 text-sm text-slate-700">
