@@ -12,5 +12,6 @@ frontend/vite.config.d.ts
 *.tsbuildinfo
 backend/data/*.db
 backend/data/*.db-*
+backend/data/uploads/
 coverage/
 htmlcov/

@@ -94,8 +94,8 @@ def test_skill_job_fails_when_llm_returns_no_lessons(monkeypatch):
     client = auth_client()
     monkeypatch.setattr(
         jobs,
-        "generate_skill_plan",
-        lambda *_: {"knowledge_points": [], "lessons": []},
+        "generate_lesson_plan",
+        lambda *_: {"lessons": []},
     )
 
     response = client.post(
@@ -113,7 +113,9 @@ def test_skill_job_fails_when_llm_returns_no_lessons(monkeypatch):
     job = client.get(f"/api/jobs/{response.json()['job_id']}")
     assert job.status_code == 200
     assert job.json()["status"] == "failed"
-    assert "did not return any lessons" in job.json()["error"]
+    assert "Lesson plan response must include" in job.json()["error"] or "did not return any lessons" in job.json()["error"]
+    assert job.json()["error_stage"] == "lesson_plan"
+    assert any(stage["stage_key"] == "lesson_plan" and stage["status"] == "failed" for stage in job.json()["stages"])
 
     latest = client.get(f"/api/jobs/projects/{response.json()['project']['id']}/latest")
     assert latest.status_code == 200
@@ -286,14 +288,16 @@ def test_material_upload_quiz_mistake_and_review_flow():
     lesson_id = lessons[0]["id"]
 
     quiz = client.get(f"/api/lessons/{lesson_id}/quiz").json()
-    assert quiz
+    assert quiz == []
+    assessment = client.post(f"/api/lessons/{lesson_id}/assessment/start")
+    assert assessment.status_code == 200
+    assert assessment.json()["current_turn"]["question"]
     answer = client.post(
-        f"/api/quiz-items/{quiz[0]['id']}/answer",
+        f"/api/assessments/{assessment.json()['id']}/answer",
         json={"answer": "I do not know yet."},
     )
     assert answer.status_code == 200
-    assert answer.json()["is_correct"] is False
-    assert answer.json()["review_task_id"]
+    assert answer.json()["turns"][0]["score"] < 0.70
 
     reviews = client.get("/api/reviews/today")
     assert reviews.status_code == 200
@@ -400,8 +404,10 @@ def test_blank_pdf_upload_returns_ocr_message():
         f"/api/projects/{project_id}/materials",
         files={"file": ("blank.pdf", data.getvalue(), "application/pdf")},
     )
-    assert upload.status_code == 400
-    assert "OCR" in upload.json()["detail"]
+    assert upload.status_code == 200
+    job = client.get(f"/api/jobs/{upload.json()['job_id']}")
+    assert job.json()["status"] == "failed"
+    assert "OCR" in job.json()["error"]
 
 
 def test_material_upload_size_limit_message():

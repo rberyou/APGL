@@ -1,3 +1,7 @@
+import hashlib
+from pathlib import Path
+from uuid import uuid4
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session, select
 
@@ -7,7 +11,6 @@ from app.deps import get_current_user
 from app.models import LearningProject, SourceMaterial, User
 from app.schemas import MaterialStatus, MaterialUploadResponse
 from app.services.jobs import create_job, process_material_job
-from app.services.materials import extract_material
 
 
 router = APIRouter(prefix="/projects/{project_id}/materials", tags=["materials"])
@@ -36,25 +39,19 @@ async def upload_material(
             detail=f"File is too large. Maximum upload size is {_format_upload_limit(settings.max_upload_bytes)}.",
         )
 
-    try:
-        parsed = extract_material(file.filename or "material.txt", file.content_type or "", data)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not parsed.text:
-        raise HTTPException(
-            status_code=400,
-            detail="No readable text found. Scanned PDFs and OCR are not supported in this version.",
-        )
-
+    filename = file.filename or "material.txt"
+    if Path(filename).suffix.lower() not in {".pdf", ".md", ".markdown", ".txt"}:
+        raise HTTPException(status_code=400, detail="Only PDF, Markdown, and text files are supported")
+    storage_path = _store_upload(project.id, filename, data)
+    checksum = hashlib.sha256(data).hexdigest()
     material = SourceMaterial(
         project_id=project.id,
-        filename=file.filename or "material.txt",
+        filename=filename,
         content_type=file.content_type or "application/octet-stream",
-        raw_text=parsed.text,
+        raw_text="",
         status="uploaded",
-        page_count=parsed.page_count,
-        text_page_count=parsed.text_page_count,
-        character_count=parsed.character_count,
+        storage_path=str(storage_path),
+        file_checksum=checksum,
     )
     db.add(material)
     project.status = "generating"
@@ -112,3 +109,12 @@ def material_status(
         readable=readable,
         message=message,
     )
+
+
+def _store_upload(project_id: int, filename: str, data: bytes) -> Path:
+    uploads_dir = Path("backend/data/uploads") / str(project_id)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    extension = Path(filename).suffix.lower() or ".txt"
+    path = uploads_dir / f"{uuid4().hex}{extension}"
+    path.write_bytes(data)
+    return path
