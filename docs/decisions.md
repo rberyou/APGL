@@ -17,3 +17,10 @@
 - Use SQLite FTS for V2 source retrieval so large PDF/text material can be searched without adding embeddings or a vector database yet.
 - Keep video, web links, OCR, and vector retrieval out of V2 to focus on reliable PDF/Markdown/text learning.
 - Store tutor sessions, messages, citations, trackers, and learning gaps in the database instead of requiring users to manage Markdown session files.
+
+## 2026-05-30
+
+- Split project generation into persisted stages instead of one large LLM call so each stage is smaller, visible, retryable, and resumable.
+- Use knowledge-point mastery as the canonical progress signal. Lessons are learning containers, not manually completed tasks.
+- Replace fixed pre-generated lesson check questions with dynamic tutor assessment that asks questions at learning time and updates mastery, weak points, and review tasks.
+- Require explicit lesson-to-knowledge-point mapping so every knowledge point has a visible learning action.

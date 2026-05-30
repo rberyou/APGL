@@ -46,6 +46,14 @@ flowchart LR
 - Quiz answer: backend grades the answer, records it, and creates mistake/review records when incorrect.
 - Mastery update: quiz answers and session summaries update knowledge point mastery, learning gaps, and project tracker state.
 
+## Planned V2 Learning Flow
+
+The next implementation target is documented in
+`docs/v2-learning-flow-optimization-plan.md`. It replaces the current
+all-at-once generation job with persisted stages, job timeline UX,
+retry/resume, explicit lesson-to-knowledge-point mapping, and dynamic tutor
+assessment that updates mastery without requiring manual lesson completion.
+
 ## AI Strategy
 
 - Prefer `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_FAST`, and `LLM_MODEL_SMART` for third-party compatible providers.

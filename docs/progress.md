@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-05-29
+Last updated: 2026-05-30
 
 ## Completed
 
@@ -36,11 +36,12 @@ Last updated: 2026-05-29
 - Expanded backend tests to cover material diagnostics, FTS-backed tutor sessions, knowledge map/tracker APIs, unreadable PDF errors, and existing learning flows.
 - Improved third-party LLM robustness after repeated generation failures: invalid JSON responses now get one automatic JSON repair attempt, nested provider payloads are unwrapped, and backend coverage includes the repair path.
 - Fixed a MiniMax-specific JSON parsing failure where an outer ```json fence was truncated by inner Markdown code fences inside JSON string content. The parser now scans the full response for a complete JSON object before trying fenced snippets, and plan storage accepts provider-shaped `title`/`description` knowledge points and single-object quiz payloads.
+- Captured the next V2 learning-flow optimization plan in `docs/v2-learning-flow-optimization-plan.md`, covering staged generation, job timeline UX, retry/resume, explicit lesson-to-knowledge mapping, dynamic tutor assessment, and removal of manual lesson completion from the primary flow.
 
 ## Current State
 
-Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support and the first V2 tutor-platform slice. The repository includes explicit AI handoff and development rules for interrupted or future AI-assisted work.
+Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support and the first V2 tutor-platform slice. The repository includes explicit AI handoff and development rules for interrupted or future AI-assisted work. The next optimization direction is planned but not implemented yet.
 
 ## Next Step
 
-Restart the backend, retry the failed project generation, and manually exercise the V2 tutor workflow with a real PDF and configured provider. Continue iterating on tutor prompt quality, source citation precision, and mastery/pass criteria.
+Implement `docs/v2-learning-flow-optimization-plan.md`: staged project generation, persisted job stages/artifacts, retry/resume, explicit knowledge-point lesson mapping, and dynamic tutor assessment that updates mastery without manual lesson completion.
