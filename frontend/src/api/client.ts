@@ -1,6 +1,7 @@
 import type {
   AnswerResult,
   AppConfig,
+  AssessmentSession,
   Job,
   KnowledgeMap,
   Lesson,
@@ -91,6 +92,24 @@ export const api = {
       body: jsonBody(body)
     });
   },
+  createMaterialProject(body: {
+    title: string;
+    goal: string;
+    current_level?: string | null;
+    time_budget_minutes?: number | null;
+    file: File;
+  }) {
+    const formData = new FormData();
+    formData.append("title", body.title);
+    formData.append("goal", body.goal);
+    if (body.current_level) formData.append("current_level", body.current_level);
+    if (body.time_budget_minutes) formData.append("time_budget_minutes", String(body.time_budget_minutes));
+    formData.append("file", body.file);
+    return apiFetch<ProjectCreateResponse>("/projects/material", {
+      method: "POST",
+      body: formData
+    });
+  },
   generateProject(projectId: number) {
     return apiFetch<ProjectCreateResponse>(`/projects/${projectId}/generate`, {
       method: "POST"
@@ -110,6 +129,12 @@ export const api = {
   job(id: number) {
     return apiFetch<Job>(`/jobs/${id}`);
   },
+  retryJob(id: number) {
+    return apiFetch<Job>(`/jobs/${id}/retry`, { method: "POST" });
+  },
+  resumeJob(id: number) {
+    return apiFetch<Job>(`/jobs/${id}/resume`, { method: "POST" });
+  },
   latestProjectJob(projectId: number) {
     return apiFetch<Job>(`/jobs/projects/${projectId}/latest`);
   },
@@ -124,6 +149,9 @@ export const api = {
   },
   completeLesson(id: number) {
     return apiFetch<Lesson>(`/lessons/${id}/complete`, { method: "POST" });
+  },
+  prepareLesson(id: number) {
+    return apiFetch<Job>(`/lessons/${id}/prepare`, { method: "POST" });
   },
   quiz(lessonId: number) {
     return apiFetch<QuizItem[]>(`/lessons/${lessonId}/quiz`);
@@ -172,5 +200,20 @@ export const api = {
   },
   endSession(sessionId: number) {
     return apiFetch<StudySession>(`/sessions/${sessionId}/end`, { method: "POST" });
+  },
+  startAssessment(lessonId: number) {
+    return apiFetch<AssessmentSession>(`/lessons/${lessonId}/assessment/start`, { method: "POST" });
+  },
+  assessment(id: number) {
+    return apiFetch<AssessmentSession>(`/assessments/${id}`);
+  },
+  answerAssessment(id: number, answer: string) {
+    return apiFetch<AssessmentSession>(`/assessments/${id}/answer`, {
+      method: "POST",
+      body: jsonBody({ answer })
+    });
+  },
+  endAssessment(id: number) {
+    return apiFetch<AssessmentSession>(`/assessments/${id}/end`, { method: "POST" });
   }
 };

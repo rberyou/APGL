@@ -37,6 +37,17 @@ export default function CreateProjectPage() {
         }
         if (fileError) throw new Error(fileError);
       }
+      if (sourceType === "material") {
+        if (!selectedFile) throw new Error("Choose a PDF, Markdown, or text file");
+        const created = await api.createMaterialProject({
+          title,
+          goal,
+          current_level: currentLevel || null,
+          time_budget_minutes: timeBudget,
+          file: selectedFile
+        });
+        return { projectId: created.project.id, jobId: created.job_id };
+      }
       const created = await api.createProject({
         title,
         goal,
@@ -44,11 +55,6 @@ export default function CreateProjectPage() {
         current_level: currentLevel || null,
         time_budget_minutes: timeBudget
       });
-      if (sourceType === "material") {
-        if (!selectedFile) throw new Error("Choose a PDF, Markdown, or text file");
-        const uploaded = await api.uploadMaterial(created.project.id, selectedFile);
-        return { projectId: created.project.id, jobId: uploaded.job_id };
-      }
       return { projectId: created.project.id, jobId: created.job_id };
     },
     onSuccess: ({ projectId, jobId }) => {
@@ -112,7 +118,7 @@ export default function CreateProjectPage() {
             <FileUp className="mb-3 text-teal" size={22} aria-hidden="true" />
             <span className="block font-bold text-ink">Learning material</span>
             <span className="mt-1 block text-sm leading-6 text-slate-600">
-              Upload PDF, Markdown, or text and turn it into lessons and quizzes.
+              Upload PDF, Markdown, or text and turn it into a tutor learning path.
             </span>
           </button>
         </div>

@@ -1,25 +1,20 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
-import {
-  BookOpen,
-  CheckCircle2,
-  MessageSquare,
-  Send,
-  Sparkles,
-  SquareCheckBig
-} from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { BookOpen, Brain, MessageSquare, Send, Sparkles } from "lucide-react";
 import { api } from "../api/client";
-import type { AnswerResult } from "../api/types";
+import type { AssessmentSession } from "../api/types";
 import { ErrorMessage, LoadingBlock } from "../components/Layout";
 
 export default function LessonPage() {
   const { lessonId } = useParams();
   const id = Number(lessonId);
   const queryClient = useQueryClient();
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [results, setResults] = useState<Record<number, AnswerResult>>({});
+  const navigate = useNavigate();
+  const assessmentSectionRef = useRef<HTMLElement | null>(null);
   const [sessionId, setSessionId] = useState<number | null>(null);
+  const [assessmentId, setAssessmentId] = useState<number | null>(null);
+  const [assessmentAnswer, setAssessmentAnswer] = useState("");
   const [tutorInput, setTutorInput] = useState("");
 
   const lesson = useQuery({
@@ -27,15 +22,16 @@ export default function LessonPage() {
     queryFn: () => api.lesson(id),
     enabled: Number.isFinite(id)
   });
-  const quiz = useQuery({
-    queryKey: ["quiz", id],
-    queryFn: () => api.quiz(id),
-    enabled: Number.isFinite(id)
-  });
   const steps = useQuery({
     queryKey: ["lesson-steps", id],
     queryFn: () => api.lessonSteps(id),
     enabled: Number.isFinite(id)
+  });
+  const assessment = useQuery({
+    queryKey: ["assessment", assessmentId],
+    queryFn: () => api.assessment(assessmentId!),
+    enabled: Boolean(assessmentId),
+    refetchInterval: false
   });
   const sessions = useQuery({
     queryKey: ["sessions", lesson.data?.project_id],
@@ -52,22 +48,35 @@ export default function LessonPage() {
     enabled: Boolean(activeSession)
   });
 
-  const answerMutation = useMutation({
-    mutationFn: ({ quizId, answer }: { quizId: number; answer: string }) =>
-      api.answerQuiz(quizId, answer),
-    onSuccess: (result, variables) => {
-      setResults((current) => ({ ...current, [variables.quizId]: result }));
-      queryClient.invalidateQueries({ queryKey: ["reviews", "today"] });
-      queryClient.invalidateQueries({ queryKey: ["mistakes"] });
+  const prepareMutation = useMutation({
+    mutationFn: () => api.prepareLesson(id),
+    onSuccess: (job) => navigate(`/jobs/${job.id}?projectId=${job.project_id}`)
+  });
+
+  const startAssessmentMutation = useMutation({
+    mutationFn: () => api.startAssessment(id),
+    onSuccess: (data) => {
+      setAssessmentId(data.id);
+      queryClient.invalidateQueries({ queryKey: ["lesson", id] });
+      queryClient.invalidateQueries({ queryKey: ["project-tracker", data.project_id] });
+      window.setTimeout(() => {
+        assessmentSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
     }
   });
 
-  const completeMutation = useMutation({
-    mutationFn: () => api.completeLesson(id),
-    onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ["project", updated.project_id] });
-      queryClient.invalidateQueries({ queryKey: ["lessons", updated.project_id] });
+  const answerAssessmentMutation = useMutation({
+    mutationFn: ({ target, answer }: { target: AssessmentSession; answer: string }) =>
+      api.answerAssessment(target.id, answer),
+    onSuccess: (data) => {
+      setAssessmentAnswer("");
+      setAssessmentId(data.id);
+      queryClient.setQueryData(["assessment", data.id], data);
       queryClient.invalidateQueries({ queryKey: ["lesson", id] });
+      queryClient.invalidateQueries({ queryKey: ["project", data.project_id] });
+      queryClient.invalidateQueries({ queryKey: ["project-tracker", data.project_id] });
+      queryClient.invalidateQueries({ queryKey: ["reviews", "today"] });
+      queryClient.invalidateQueries({ queryKey: ["mistakes"] });
     }
   });
 
@@ -101,7 +110,10 @@ export default function LessonPage() {
     }
   });
 
-  if (lesson.isLoading || quiz.isLoading || steps.isLoading) {
+  const activeAssessment = assessment.data ?? startAssessmentMutation.data ?? null;
+  const currentTurn = activeAssessment?.current_turn ?? null;
+
+  if (lesson.isLoading || steps.isLoading) {
     return <LoadingBlock label="Loading tutor workspace" />;
   }
   if (lesson.error) return <ErrorMessage message={lesson.error.message} />;
@@ -115,95 +127,151 @@ export default function LessonPage() {
           </span>
           <h1 className="mt-2 text-2xl font-bold text-ink">{lesson.data?.title}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">{lesson.data?.summary}</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Metric label="Lesson mastery" value={`${Math.round((lesson.data?.mastery ?? 0) * 100)}%`} />
+            <Metric label="Knowledge points" value={String(lesson.data?.knowledge_points.length ?? 0)} />
+          </div>
+          {lesson.data?.knowledge_points.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {lesson.data.knowledge_points.map((point) => (
+                <span key={point.id} className="rounded-md bg-paper px-2 py-1 text-xs font-semibold text-slate-700">
+                  {point.name} · {Math.round(point.mastery * 100)}%
+                </span>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              className="btn-primary"
-              onClick={() => completeMutation.mutate()}
-              disabled={completeMutation.isPending || lesson.data?.status === "completed"}
-            >
-              <SquareCheckBig size={16} aria-hidden="true" />
-              {lesson.data?.status === "completed" ? "Completed" : "Mark complete"}
-            </button>
+            {!lesson.data?.content ? (
+              <button
+                className="btn-primary"
+                disabled={prepareMutation.isPending}
+                onClick={() => prepareMutation.mutate()}
+              >
+                <Sparkles size={16} aria-hidden="true" />
+                {prepareMutation.isPending ? "Preparing" : "Prepare lesson"}
+              </button>
+            ) : (
+              <button
+                className="btn-primary"
+                disabled={startAssessmentMutation.isPending}
+                onClick={() => startAssessmentMutation.mutate()}
+              >
+                <Brain size={16} aria-hidden="true" />
+                {startAssessmentMutation.isPending
+                  ? "Starting quiz"
+                  : activeAssessment
+                    ? "Continue quiz"
+                    : "Quiz me"}
+              </button>
+            )}
             {lesson.data ? (
               <Link className="btn-secondary" to={`/projects/${lesson.data.project_id}`}>
                 Back to project
               </Link>
             ) : null}
           </div>
+          {prepareMutation.error ? <div className="mt-3"><ErrorMessage message={prepareMutation.error.message} /></div> : null}
         </article>
 
         <section className="panel">
           <div className="mb-4 flex items-center gap-2">
             <BookOpen className="text-teal" size={20} aria-hidden="true" />
-            <h2 className="text-lg font-bold text-ink">Guided lesson steps</h2>
+            <h2 className="text-lg font-bold text-ink">Tutor explanation</h2>
           </div>
-          <div className="space-y-4">
-            {steps.data?.map((step) => (
-              <div key={step.id} className="rounded-md border border-line p-4">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="text-xs font-bold uppercase tracking-wide text-ember">
-                    {step.step_type}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500">Step {step.order_index}</span>
+          {lesson.data?.content ? (
+            <div className="space-y-4">
+              {steps.data?.map((step) => (
+                <div key={step.id} className="rounded-md border border-line p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold uppercase tracking-wide text-ember">
+                      {step.step_type}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">Step {step.order_index}</span>
+                  </div>
+                  <h3 className="font-bold text-ink">{step.title}</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                    {step.body}
+                  </p>
                 </div>
-                <h3 className="font-bold text-ink">{step.title}</h3>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                  {step.body}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-slate-600">
+              This lesson has a path and mapped knowledge points. Prepare it when you are ready for
+              the tutor explanation.
+            </p>
+          )}
         </section>
 
-        <div>
-          <h2 className="text-lg font-bold text-ink">Check understanding</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Answer in your own words; weak points go to review.
-          </p>
-        </div>
-        {answerMutation.error ? <ErrorMessage message={answerMutation.error.message} /> : null}
-        {quiz.data?.map((item) => {
-          const result = results[item.id];
-          return (
-            <section key={item.id} className="panel">
-              <p className="text-sm font-semibold leading-6 text-ink">{item.prompt}</p>
-              <textarea
-                className="field mt-3 min-h-24"
-                value={answers[item.id] ?? ""}
-                onChange={(event) =>
-                  setAnswers((current) => ({ ...current, [item.id]: event.target.value }))
-                }
-                placeholder="Type your answer"
-              />
+        <section className="panel" ref={assessmentSectionRef}>
+          <div className="mb-4 flex items-center gap-2">
+            <Brain className="text-teal" size={20} aria-hidden="true" />
+            <h2 className="text-lg font-bold text-ink">Dynamic assessment</h2>
+          </div>
+          {startAssessmentMutation.error ? (
+            <div className="mb-4">
+              <ErrorMessage message={startAssessmentMutation.error.message} />
+            </div>
+          ) : null}
+          {!activeAssessment ? (
+            <div className="space-y-4">
+              <p className="text-sm leading-6 text-slate-600">
+                Start a tutor assessment when you are ready. APGL will ask one question at a time and
+                update mastery from your answers.
+              </p>
               <button
-                className="btn-primary mt-3 w-full"
-                disabled={answerMutation.isPending || !answers[item.id]?.trim()}
-                onClick={() =>
-                  answerMutation.mutate({ quizId: item.id, answer: answers[item.id] })
-                }
+                className="btn-primary"
+                disabled={startAssessmentMutation.isPending || !lesson.data?.content}
+                onClick={() => startAssessmentMutation.mutate()}
               >
-                <Send size={16} aria-hidden="true" />
-                Submit
+                <Brain size={16} aria-hidden="true" />
+                {startAssessmentMutation.isPending ? "Starting quiz" : "Quiz me"}
               </button>
-              {result ? (
-                <div
-                  className={`mt-3 rounded-md border p-3 text-sm leading-6 ${
-                    result.is_correct
-                      ? "border-teal/30 bg-teal/5 text-teal"
-                      : "border-amber-200 bg-amber-50 text-amber-800"
-                  }`}
-                >
-                  <div className="mb-1 flex items-center gap-2 font-bold">
-                    <CheckCircle2 size={16} aria-hidden="true" />
-                    {result.is_correct ? "Looks good" : "Review needed"}
-                  </div>
-                  <p>{result.feedback}</p>
-                  {result.explanation ? <p className="mt-2">{result.explanation}</p> : null}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-md bg-paper p-3 text-sm text-slate-700">
+                Mastery: {Math.round(activeAssessment.lesson_mastery * 100)}% · Answered:{" "}
+                {activeAssessment.turns_answered}
+              </div>
+              {activeAssessment.status === "completed" ? (
+                <div className="rounded-md border border-teal/30 bg-teal/5 p-3 text-sm leading-6 text-teal">
+                  {activeAssessment.summary || "Assessment completed."}
+                </div>
+              ) : currentTurn ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold leading-6 text-ink">{currentTurn.question}</p>
+                  <textarea
+                    className="field min-h-24"
+                    value={assessmentAnswer}
+                    onChange={(event) => setAssessmentAnswer(event.target.value)}
+                    placeholder="Answer in your own words"
+                  />
+                  <button
+                    className="btn-primary"
+                    disabled={answerAssessmentMutation.isPending || !assessmentAnswer.trim()}
+                    onClick={() =>
+                      answerAssessmentMutation.mutate({
+                        target: activeAssessment,
+                        answer: assessmentAnswer
+                      })
+                    }
+                  >
+                    <Send size={16} aria-hidden="true" />
+                    Submit answer
+                  </button>
                 </div>
               ) : null}
-            </section>
-          );
-        })}
+              {answerAssessmentMutation.error ? <ErrorMessage message={answerAssessmentMutation.error.message} /> : null}
+              {activeAssessment.turns.filter((turn) => turn.status === "answered").slice(-3).map((turn) => (
+                <div key={turn.id} className="rounded-md border border-line p-3 text-sm leading-6">
+                  <div className="font-semibold text-ink">Score {Math.round((turn.score ?? 0) * 100)}%</div>
+                  <p className="mt-1 text-slate-600">{turn.feedback}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <aside className="space-y-4">
@@ -229,12 +297,8 @@ export default function LessonPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {startSessionMutation.error ? (
-                <ErrorMessage message={startSessionMutation.error.message} />
-              ) : null}
-              {sendMessageMutation.error ? (
-                <ErrorMessage message={sendMessageMutation.error.message} />
-              ) : null}
+              {startSessionMutation.error ? <ErrorMessage message={startSessionMutation.error.message} /> : null}
+              {sendMessageMutation.error ? <ErrorMessage message={sendMessageMutation.error.message} /> : null}
               <div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
                 {messages.data?.map((message) => (
                   <div
@@ -288,6 +352,15 @@ export default function LessonPage() {
           )}
         </section>
       </aside>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-paper p-3">
+      <div className="text-xs font-semibold text-slate-500">{label}</div>
+      <div className="mt-1 text-base font-bold text-ink">{value}</div>
     </div>
   );
 }

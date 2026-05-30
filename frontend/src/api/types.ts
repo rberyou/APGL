@@ -26,9 +26,34 @@ export type Job = {
   project_id: number;
   material_id: number | null;
   job_type: string;
-  status: "pending" | "processing" | "completed" | "failed";
+  status: "pending" | "processing" | "completed" | "failed" | "interrupted";
   error: string | null;
+  stage_key: string | null;
+  stage_label: string | null;
+  progress_percent: number;
+  message: string;
+  error_stage: string | null;
+  retry_of_job_id: number | null;
+  resumed_from_job_id: number | null;
+  stages?: JobStage[];
   created_at: string;
+  updated_at: string;
+};
+
+export type JobStage = {
+  id: number;
+  job_id: number;
+  project_id: number;
+  stage_key: string;
+  label: string;
+  status: "pending" | "running" | "completed" | "skipped" | "failed";
+  order_index: number;
+  message: string;
+  details_json: string;
+  error: string | null;
+  is_retryable: boolean;
+  started_at: string | null;
+  completed_at: string | null;
   updated_at: string;
 };
 
@@ -56,6 +81,19 @@ export type Lesson = {
   content: string;
   order_index: number;
   status: string;
+  knowledge_points: KnowledgePoint[];
+  mastery: number;
+};
+
+export type KnowledgePoint = {
+  id: number;
+  client_key: string | null;
+  name: string;
+  explanation: string;
+  difficulty: string;
+  estimated_weight: number;
+  source_locator: string | null;
+  mastery: number;
 };
 
 export type LessonStep = {
@@ -122,8 +160,12 @@ export type KnowledgeMap = {
   project_id: number;
   nodes: Array<{
     id: number;
+    client_key: string | null;
     name: string;
     explanation: string;
+    difficulty: string;
+    estimated_weight: number;
+    source_locator: string | null;
     mastery: number;
     lesson_ids: number[];
     lesson_titles: string[];
@@ -181,4 +223,41 @@ export type TutorMessage = {
   content: string;
   citations: TutorCitation[];
   created_at: string;
+};
+
+export type AssessmentTurn = {
+  id: number;
+  assessment_id: number;
+  project_id: number;
+  lesson_id: number;
+  knowledge_point_id: number | null;
+  quiz_item_id: number | null;
+  status: "asked" | "answered" | "skipped";
+  question: string;
+  user_answer: string | null;
+  feedback: string | null;
+  score: number | null;
+  mastery_delta: number | null;
+  missing_concepts: string[];
+  next_action: string | null;
+  citations: TutorCitation[];
+  created_at: string;
+  answered_at: string | null;
+};
+
+export type AssessmentSession = {
+  id: number;
+  project_id: number;
+  lesson_id: number;
+  user_id: number;
+  status: "active" | "completed";
+  mode: string;
+  summary: string | null;
+  lesson_mastery: number;
+  turns_answered: number;
+  current_turn: AssessmentTurn | null;
+  turns: AssessmentTurn[];
+  started_at: string;
+  ended_at: string | null;
+  updated_at: string;
 };

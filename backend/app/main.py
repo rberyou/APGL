@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, jobs, lessons, materials, mistakes, projects, quiz, reviews, tutor
+from app.routers import assessments, auth, jobs, lessons, materials, mistakes, projects, quiz, reviews, tutor
 
 
 @asynccontextmanager
@@ -44,3 +44,4 @@ app.include_router(quiz.router, prefix="/api")
 app.include_router(reviews.router, prefix="/api")
 app.include_router(mistakes.router, prefix="/api")
 app.include_router(tutor.router, prefix="/api")
+app.include_router(assessments.router, prefix="/api")

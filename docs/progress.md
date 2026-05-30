@@ -40,11 +40,34 @@ Last updated: 2026-05-30
 - Reviewed and refined the V2 learning-flow optimization plan from a senior architecture perspective. The plan now clarifies resumable material uploads, schema-specific LLM parsing, idempotent retry/resume, lesson preparation boundaries, assessment compatibility with existing review/mistake tables, and product decisions for the V2 implementation.
 - Resolved the V2 product decisions in the plan and decisions log: material projects upload files during creation, assessments continue until mastery and can be resumed, low-score answers enter review, projects auto-mark as passed when criteria are met, and generation recovery uses a single `Continue generation` action with explanatory copy.
 - Prepared parallel worktree implementation support by making the Vite dev server port and API proxy target configurable through `APGL_FRONTEND_PORT` and `APGL_API_PROXY_TARGET`.
+- Implemented the V2 learning-flow optimization: staged generation with
+  persisted `JobStage` timeline records, generation artifacts, file-backed
+  material intake, project brief/knowledge map/lesson-plan/first-lesson stages,
+  retry/resume endpoints, and a learner-facing `Continue generation` UI.
+- Added explicit lesson-to-knowledge-point mappings and changed project progress
+  to derive from weighted knowledge-point mastery.
+- Added dynamic lesson assessment sessions and turns. Assessment answers update
+  mastery, learning gaps, review tasks, mistake records, tracker progress, and
+  automatic project pass state.
+- Updated the lesson page to remove the primary manual `Mark complete` and fixed
+  `Check understanding` flow, replacing it with `Quiz me` dynamic assessment
+  while preserving AI Tutor chat.
+- Updated material project creation so the primary UX submits metadata and file
+  in one action; uploaded files are stored under `backend/data/uploads/` for
+  resumable generation.
+- Verified backend tests: `18 passed` with `.\.venv\Scripts\python -m pytest backend -q`.
+- Verified frontend production build with `npm run build`.
+- Completed local smoke test at `http://localhost:5173` using
+  `DATABASE_URL=sqlite:///./backend/data/app-ai-a.db`,
+  `SESSION_COOKIE_NAME=apgl_session_a`, and `APGL_MOCK_AI=true`: registered a
+  user, created a skill project, watched the staged timeline complete, opened
+  the first lesson, started dynamic assessment, submitted an answer, and saw the
+  assessment score/weak-point flow update.
 
 ## Current State
 
-Implementation is verified locally, including third-party OpenAI-compatible Chat Completions support and the first V2 tutor-platform slice. The repository includes explicit AI handoff and development rules for interrupted or future AI-assisted work. The next optimization direction is planned, architecture-reviewed, and product decisions are resolved, but not implemented yet.
+Implementation is re-verified locally after the V2 learning-flow optimization. Backend tests pass, frontend build passes, and the local dev-server smoke test passed on the isolated `app-ai-a.db` configuration.
 
 ## Next Step
 
-Implement staged project generation, persisted job stages/artifacts, retry/resume, explicit knowledge-point lesson mapping, and dynamic tutor assessment that updates mastery without manual lesson completion.
+Do a real-provider/manual PDF pass in a later follow-up, especially with a large source document.

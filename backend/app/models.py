@@ -31,6 +31,7 @@ class LearningProject(SQLModel, table=True):
     time_budget_minutes: int | None = None
     status: str = Field(default="active", index=True)
     progress_percent: int = 0
+    passed_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -65,6 +66,9 @@ class SourceMaterial(SQLModel, table=True):
     filename: str
     content_type: str
     raw_text: str
+    storage_path: str | None = None
+    file_checksum: str | None = None
+    error: str | None = None
     status: str = Field(default="uploaded", index=True)
     page_count: int = 0
     text_page_count: int = 0
@@ -86,8 +90,12 @@ class SourceChunk(SQLModel, table=True):
 class KnowledgePoint(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(index=True, foreign_key="learningproject.id")
+    client_key: str | None = Field(default=None, index=True)
     name: str
     explanation: str
+    difficulty: str = "core"
+    estimated_weight: float = 1.0
+    source_locator: str | None = None
     mastery: float = 0.0
     source_chunk_id: int | None = Field(default=None, foreign_key="sourcechunk.id")
 
@@ -108,6 +116,16 @@ class LessonUnit(SQLModel, table=True):
     content: str
     order_index: int = Field(index=True)
     status: str = Field(default="pending", index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class LessonKnowledgePoint(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    lesson_id: int = Field(index=True, foreign_key="lessonunit.id")
+    knowledge_point_id: int = Field(index=True, foreign_key="knowledgepoint.id")
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    coverage_role: str = "primary"
+    order_index: int = Field(index=True)
     created_at: datetime = Field(default_factory=utc_now)
 
 
@@ -221,6 +239,72 @@ class LearningEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class AssessmentSession(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    lesson_id: int = Field(index=True, foreign_key="lessonunit.id")
+    user_id: int = Field(index=True, foreign_key="user.id")
+    status: str = Field(default="active", index=True)
+    mode: str = "quiz"
+    summary: str | None = None
+    started_at: datetime = Field(default_factory=utc_now)
+    ended_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class AssessmentTurn(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    assessment_id: int = Field(index=True, foreign_key="assessmentsession.id")
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    lesson_id: int = Field(index=True, foreign_key="lessonunit.id")
+    knowledge_point_id: int | None = Field(default=None, foreign_key="knowledgepoint.id")
+    quiz_item_id: int | None = Field(default=None, foreign_key="quizitem.id")
+    status: str = Field(default="asked", index=True)
+    question: str
+    user_answer: str | None = None
+    feedback: str | None = None
+    score: float | None = None
+    mastery_delta: float | None = None
+    missing_concepts_json: str = "[]"
+    next_action: str | None = None
+    citations_json: str = "[]"
+    created_at: datetime = Field(default_factory=utc_now)
+    answered_at: datetime | None = None
+
+
+class JobStage(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    job_id: int = Field(index=True, foreign_key="job.id")
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    stage_key: str = Field(index=True)
+    label: str
+    status: str = Field(default="pending", index=True)
+    order_index: int = Field(index=True)
+    message: str = ""
+    details_json: str = "{}"
+    error: str | None = None
+    is_retryable: bool = True
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class GenerationArtifact(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True, foreign_key="learningproject.id")
+    job_id: int = Field(index=True, foreign_key="job.id")
+    material_id: int | None = Field(default=None, foreign_key="sourcematerial.id")
+    stage_key: str = Field(index=True)
+    artifact_type: str = Field(index=True)
+    input_hash: str = Field(index=True)
+    schema_version: str
+    prompt_version: str
+    content_json: str
+    status: str = Field(default="active", index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class Job(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(index=True, foreign_key="user.id")
@@ -229,5 +313,12 @@ class Job(SQLModel, table=True):
     job_type: str
     status: str = Field(default="pending", index=True)
     error: str | None = None
+    stage_key: str | None = None
+    stage_label: str | None = None
+    progress_percent: int = 0
+    message: str = ""
+    error_stage: str | None = None
+    retry_of_job_id: int | None = Field(default=None, foreign_key="job.id")
+    resumed_from_job_id: int | None = Field(default=None, foreign_key="job.id")
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

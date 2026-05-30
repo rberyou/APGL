@@ -25,8 +25,11 @@ flowchart LR
 - `app.services.materials` extracts and chunks uploaded material.
 - `app.services.retrieval` owns the SQLite FTS source chunk index and retrieval.
 - `app.services.ai` wraps OpenAI-compatible Chat Completions and deterministic explicit mock output.
-- `app.services.jobs` processes skill and material generation jobs.
-- `app.services.learning` owns tutor profiles, trackers, knowledge maps, lesson steps, tutor sessions, messages, citations, learning gaps, and mastery updates.
+- `app.services.jobs` processes staged skill/material generation jobs, persists
+  job stages and generation artifacts, and owns retry/resume orchestration.
+- `app.services.learning` owns tutor profiles, trackers, knowledge maps, explicit
+  lesson-to-knowledge-point mapping, lesson steps, tutor sessions, messages,
+  citations, dynamic assessments, learning gaps, and mastery updates.
 - Auth uses email/password, Argon2 password hashing, and httpOnly Cookie sessions.
 
 ## Frontend
@@ -37,23 +40,46 @@ flowchart LR
   `http://127.0.0.1:8000`.
 - Pages are task-oriented: Dashboard, Create Project, Job Status, Project Detail, Lesson, Review, Mistake Book.
 - Project detail shows tracker, source diagnostics, knowledge map, session history, and lesson path.
-- Lesson pages are tutor workspaces with structured steps, tutor chat, citations, and checks.
+- Lesson pages are tutor workspaces with structured steps, tutor chat, citations,
+  dynamic assessment, mastery state, and weak-point feedback.
 
 ## Data Flow
 
-- Skill project: `POST /api/projects` creates a learning space, tutor profile, tracker, and background job; job generates knowledge points, lessons, quiz items, and lesson steps.
-- Material project: create project, upload file, parse text, chunk text, index chunks in SQLite FTS, generate knowledge map, lessons, quiz items, and source citations.
+- Skill project: `POST /api/projects` creates a learning space, tutor profile,
+  tracker, persisted job stages, and a background job. The job separately
+  creates a project brief, knowledge map, lesson plan, explicit lesson mappings,
+  and first lesson content.
+- Material project: `POST /api/projects/material` persists the uploaded file
+  under `backend/data/uploads/`, creates a `SourceMaterial`, and starts the same
+  staged generation pipeline. Material intake later parses text, chunks it, and
+  indexes chunks in SQLite FTS.
 - Tutor session: create session, send messages, retrieve relevant source chunks, call the tutor LLM, store message citations, and end the session with a summary/tracker update.
-- Quiz answer: backend grades the answer, records it, and creates mistake/review records when incorrect.
-- Mastery update: quiz answers and session summaries update knowledge point mastery, learning gaps, and project tracker state.
+- Dynamic assessment: start or resume an active lesson assessment, ask one
+  tutor-generated question, evaluate the answer through `services.ai`, clamp
+  mastery changes, update weak points, and create compatibility `QuizItem`,
+  `MistakeRecord`, and `ReviewTask` rows when review is needed.
+- Mastery update: assessment answers, legacy quiz answers, and session summaries
+  update knowledge point mastery, project tracker state, and project
+  `progress_percent`. Projects are marked `passed` when mastery reaches the pass
+  criteria and no high-severity gaps remain open.
 
-## Planned V2 Learning Flow
+## V2 Learning Flow
 
-The next implementation target is documented in
-`docs/v2-learning-flow-optimization-plan.md`. It replaces the current
-all-at-once generation job with persisted stages, job timeline UX,
-retry/resume, explicit lesson-to-knowledge-point mapping, and dynamic tutor
-assessment that updates mastery without requiring manual lesson completion.
+The V2 flow replaces all-at-once generation with persisted stages:
+
+1. Understand learning goal
+2. Parse learning material
+3. Build source index
+4. Create project brief
+5. Build knowledge map
+6. Plan tutor learning path
+7. Prepare first lesson
+8. Ready
+
+`JobStage` records drive the frontend timeline. `GenerationArtifact` records
+persist stage outputs and input hashes so retry/resume can reuse completed work.
+`LessonKnowledgePoint` maps every knowledge point to at least one lesson.
+`AssessmentSession` and `AssessmentTurn` store resumable dynamic quiz sessions.
 
 ## AI Strategy
 
@@ -73,3 +99,11 @@ assessment that updates mastery without requiring manual lesson completion.
 - `GET /api/sessions/{id}/messages`
 - `POST /api/sessions/{id}/messages`
 - `POST /api/sessions/{id}/end`
+- `GET /api/jobs/{id}` with ordered stage timeline
+- `POST /api/jobs/{id}/retry`
+- `POST /api/jobs/{id}/resume`
+- `POST /api/lessons/{id}/prepare`
+- `POST /api/lessons/{id}/assessment/start`
+- `GET /api/assessments/{id}`
+- `POST /api/assessments/{id}/answer`
+- `POST /api/assessments/{id}/end`

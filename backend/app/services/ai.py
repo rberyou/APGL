@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 from openai import OpenAI, OpenAIError
@@ -71,29 +72,38 @@ def _client() -> OpenAI | None:
     return OpenAI(**kwargs)
 
 
-def _json_from_text(text: str) -> dict[str, Any] | None:
+def _json_from_text(
+    text: str,
+    expected_keys: set[str] | None = None,
+    validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any] | None:
     cleaned = text.strip()
     cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.S | re.I).strip()
     try:
         value = json.loads(cleaned)
     except json.JSONDecodeError:
-        found = _first_json_object(cleaned)
+        found = _first_json_object(cleaned, expected_keys, validator)
         if found is not None:
-            return found
+            if _valid_payload(found, expected_keys, validator):
+                return found
         for fenced in re.finditer(r"```(?:json)?\s*(.*?)```", cleaned, flags=re.S):
             candidate = fenced.group(1).strip()
             try:
                 value = json.loads(candidate)
             except json.JSONDecodeError:
                 continue
-            parsed = _expected_payload(value) if isinstance(value, dict) else None
+            parsed = _expected_payload(value, expected_keys, validator) if isinstance(value, dict) else None
             if parsed is not None:
                 return parsed
         return None
-    return _expected_payload(value) if isinstance(value, dict) else None
+    return _expected_payload(value, expected_keys, validator) if isinstance(value, dict) else None
 
 
-def _first_json_object(text: str) -> dict[str, Any] | None:
+def _first_json_object(
+    text: str,
+    expected_keys: set[str] | None = None,
+    validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any] | None:
     decoder = json.JSONDecoder()
     for match in re.finditer(r"\{", text):
         try:
@@ -101,51 +111,104 @@ def _first_json_object(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict):
-            payload = _expected_payload(value)
+            payload = _expected_payload(value, expected_keys, validator)
             if payload is not None:
                 return payload
     return None
 
 
-def _looks_like_expected_payload(value: dict[str, Any]) -> bool:
-    expected_keys = {
+def _looks_like_expected_payload(value: dict[str, Any], expected_keys: set[str] | None = None) -> bool:
+    expected = expected_keys or {
         "knowledge_points",
         "lessons",
+        "learning_goal",
+        "tutor_explanation",
+        "question",
         "is_correct",
         "ok",
         "answer",
         "summary",
     }
-    return bool(expected_keys & set(value.keys()))
+    return bool(expected & set(value.keys()))
 
 
-def _expected_payload(value: dict[str, Any]) -> dict[str, Any] | None:
-    if _looks_like_expected_payload(value):
+def _valid_payload(
+    value: dict[str, Any],
+    expected_keys: set[str] | None = None,
+    validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> bool:
+    if not _looks_like_expected_payload(value, expected_keys):
+        return False
+    return validator(value) if validator else True
+
+
+def _expected_payload(
+    value: dict[str, Any],
+    expected_keys: set[str] | None = None,
+    validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any] | None:
+    if _valid_payload(value, expected_keys, validator):
         return value
     for key in ("data", "result", "response", "content", "json"):
         nested = value.get(key)
-        if isinstance(nested, dict) and _looks_like_expected_payload(nested):
+        if isinstance(nested, dict) and _valid_payload(nested, expected_keys, validator):
             return nested
     return None
 
 
-def _response_json(model: str, system: str, user: str) -> dict[str, Any] | None:
+def _response_json(
+    model: str,
+    system: str,
+    user: str,
+    expected_keys: set[str] | None = None,
+    validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any] | None:
     client = _client()
     if client is None:
         return None
     text = _chat_text(client, model, system, user)
-    parsed = _json_from_text(text)
+    parsed = _json_from_text(text, expected_keys, validator)
     if parsed is not None:
         return parsed
 
     repaired_text = _repair_json_text(client, model, system, user, text)
-    repaired = _json_from_text(repaired_text)
+    repaired = _json_from_text(repaired_text, expected_keys, validator)
     if repaired is None:
         raise AIResponseError(
             "LLM response was not valid JSON after an automatic repair attempt. "
             "Check that the configured model supports JSON-only Chat Completions."
         )
     return repaired
+
+
+def _response_json_or_text_answer(
+    model: str,
+    system: str,
+    user: str,
+    expected_keys: set[str] | None = None,
+    validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any] | None:
+    client = _client()
+    if client is None:
+        return None
+    text = _chat_text(client, model, system, user)
+    parsed = _json_from_text(text, expected_keys, validator)
+    if parsed is not None:
+        return parsed
+
+    repaired_text = _repair_json_text(client, model, system, user, text)
+    repaired = _json_from_text(repaired_text, expected_keys, validator)
+    if repaired is not None:
+        return repaired
+
+    fallback = (repaired_text or text).strip()
+    if not fallback:
+        raise AIResponseError("LLM returned empty tutor content.")
+    return {
+        "answer": fallback,
+        "follow_up_questions": [],
+        "suggested_actions": ["Ask a follow-up question", "Try answering in your own words"],
+    }
 
 
 def _chat_text(client: OpenAI, model: str, system: str, user: str) -> str:
@@ -282,6 +345,274 @@ def _fallback_plan(title: str, goal: str, source_excerpt: str | None = None) -> 
     }
 
 
+def _fallback_project_brief(goal: str, current_level: str | None) -> dict[str, Any]:
+    return {
+        "learning_goal": goal,
+        "assumed_current_level": _normalized_level(current_level),
+        "scope": ["Core concepts", "Practical examples", "Recall practice"],
+        "out_of_scope": ["External certification", "Unrelated advanced topics"],
+        "recommended_strategy": "Study one concept at a time, answer tutor checks, and review weak points.",
+        "success_criteria": ["Explain core ideas in your own words", "Apply concepts in a small exercise"],
+    }
+
+
+def _fallback_knowledge_map(title: str, goal: str, source_excerpt: str | None = None) -> dict[str, Any]:
+    plan = _fallback_plan(title, goal, source_excerpt)
+    points = []
+    for index, item in enumerate(plan["knowledge_points"], start=1):
+        key = _client_key(item["name"], index)
+        points.append(
+            {
+                "client_key": key,
+                "name": item["name"],
+                "explanation": item["explanation"],
+                "difficulty": "intro" if index == 1 else "core",
+                "estimated_weight": round(1 / len(plan["knowledge_points"]), 3),
+                "source_locator": "chunk-1" if source_excerpt else None,
+            }
+        )
+    return {
+        "knowledge_points": points,
+        "edges": [
+            {
+                "source_client_key": points[index - 1]["client_key"],
+                "target_client_key": points[index]["client_key"],
+                "relation_type": "prerequisite",
+            }
+            for index in range(1, len(points))
+        ],
+    }
+
+
+def _fallback_lesson_plan(title: str, goal: str, knowledge_points: list[dict[str, Any]]) -> dict[str, Any]:
+    if not knowledge_points:
+        knowledge_points = _fallback_knowledge_map(title, goal)["knowledge_points"]
+    lessons = []
+    for index, point in enumerate(knowledge_points, start=1):
+        lessons.append(
+            {
+                "title": f"{title}: {point['name']}",
+                "summary": f"Understand and practice {point['name']}.",
+                "order_index": index,
+                "covered_knowledge_client_keys": [point["client_key"]],
+                "learning_objectives": [f"Explain {point['name']} in your own words"],
+                "suggested_activity": "Answer a tutor question and ask for an example.",
+            }
+        )
+    return {"lessons": lessons[:6]}
+
+
+def _fallback_lesson_content(
+    lesson_title: str,
+    lesson_summary: str,
+    knowledge_points: list[dict[str, Any]],
+    context_chunks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    names = ", ".join(str(item.get("name")) for item in knowledge_points) or lesson_title
+    citations = []
+    for chunk in context_chunks[:2]:
+        if chunk.get("id"):
+            citations.append(
+                {
+                    "source_chunk_id": chunk["id"],
+                    "label": chunk.get("locator") or chunk.get("title") or "Source",
+                    "excerpt": str(chunk.get("content") or "")[:260],
+                }
+            )
+    return {
+        "tutor_explanation": (
+            f"{lesson_summary}\n\nFocus on {names}. Start by naming the idea, then connect it "
+            "to one concrete example before answering the tutor check."
+        ),
+        "examples": [f"A useful example is to apply {names} to a small realistic task."],
+        "practice_suggestions": ["Explain the idea aloud", "Ask the tutor for a follow-up challenge"],
+        "source_citations": citations,
+    }
+
+
+def _client_key(name: str, index: int) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return (slug or f"point-{index}")[:80]
+
+
+def _normalized_level(value: str | None) -> str:
+    text = (value or "unknown").lower()
+    if "begin" in text:
+        return "beginner"
+    if "inter" in text:
+        return "intermediate"
+    if "advanced" in text or "expert" in text:
+        return "advanced"
+    return "unknown"
+
+
+def generate_project_brief(
+    title: str,
+    goal: str,
+    source_type: str,
+    current_level: str | None,
+    material_context: str | None = None,
+) -> dict[str, Any]:
+    if settings.apgl_mock_ai:
+        return _fallback_project_brief(goal, current_level)
+    system = (
+        "You create a concise learning project brief. Return only JSON with keys "
+        "learning_goal, assumed_current_level, scope, out_of_scope, recommended_strategy, "
+        "and success_criteria. assumed_current_level must be beginner, intermediate, advanced, or unknown."
+    )
+    user = (
+        f"Title: {title}\nGoal: {goal}\nSource type: {source_type}\n"
+        f"Current level: {current_level or 'unknown'}\n"
+        f"Material context:\n{(material_context or '')[:6000]}"
+    )
+    data = _response_json(_model_smart(), system, user, {"learning_goal"})
+    if not data or not str(data.get("learning_goal") or "").strip():
+        raise AIResponseError("Project brief response must include learning_goal.")
+    return data
+
+
+def generate_knowledge_map(
+    title: str,
+    goal: str,
+    project_brief: dict[str, Any],
+    source_type: str,
+    context_chunks: list[str],
+) -> dict[str, Any]:
+    if settings.apgl_mock_ai:
+        return _fallback_knowledge_map(title, goal, "\n\n".join(context_chunks[:2]) if context_chunks else None)
+    system = (
+        "You build a knowledge map for an AI tutor. Return only JSON with keys knowledge_points "
+        "and edges. Do not generate lessons or quiz questions. Each knowledge point must include "
+        "client_key, name, explanation, difficulty, estimated_weight, and optional source_locator."
+    )
+    user = (
+        f"Title: {title}\nGoal: {goal}\nSource type: {source_type}\n"
+        f"Project brief:\n{json.dumps(project_brief, ensure_ascii=False)}\n\n"
+        f"Source context:\n{chr(10).join(context_chunks)[:14000]}"
+    )
+    data = _response_json(_model_smart(), system, user, {"knowledge_points"})
+    if not data or not isinstance(data.get("knowledge_points"), list) or not data["knowledge_points"]:
+        raise AIResponseError("Knowledge map response must include knowledge_points.")
+    return data
+
+
+def generate_lesson_plan(
+    title: str,
+    goal: str,
+    project_brief: dict[str, Any],
+    knowledge_points: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if settings.apgl_mock_ai:
+        return _fallback_lesson_plan(title, goal, knowledge_points)
+    system = (
+        "You plan lesson containers for an AI tutor. Return only JSON with key lessons. "
+        "Do not write detailed lesson content or quiz questions. Every returned lesson must include "
+        "title, summary, order_index, covered_knowledge_client_keys, learning_objectives, and suggested_activity."
+    )
+    user = (
+        f"Title: {title}\nGoal: {goal}\nProject brief:\n{json.dumps(project_brief, ensure_ascii=False)}\n"
+        f"Saved knowledge points:\n{json.dumps(knowledge_points, ensure_ascii=False)}"
+    )
+    data = _response_json(_model_smart(), system, user, {"lessons"})
+    if not data or not isinstance(data.get("lessons"), list) or not data["lessons"]:
+        raise AIResponseError("Lesson plan response must include at least one lesson.")
+    return data
+
+
+def generate_lesson_content(
+    lesson_title: str,
+    lesson_summary: str,
+    project_goal: str,
+    knowledge_points: list[dict[str, Any]],
+    context_chunks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if settings.apgl_mock_ai:
+        return _fallback_lesson_content(lesson_title, lesson_summary, knowledge_points, context_chunks)
+    system = (
+        "You prepare concise lesson content for an AI tutor. Return only JSON with keys "
+        "tutor_explanation, examples, practice_suggestions, and source_citations. Do not generate quiz questions."
+    )
+    user = (
+        f"Lesson: {lesson_title}\nSummary: {lesson_summary}\nProject goal: {project_goal}\n"
+        f"Knowledge points:\n{json.dumps(knowledge_points, ensure_ascii=False)}\n"
+        f"Source chunks:\n{json.dumps(context_chunks, ensure_ascii=False)[:14000]}"
+    )
+    data = _response_json(_model_smart(), system, user, {"tutor_explanation"})
+    if not data or not str(data.get("tutor_explanation") or "").strip():
+        raise AIResponseError("Lesson content response must include tutor_explanation.")
+    return data
+
+
+def generate_assessment_question(
+    project_title: str,
+    lesson_title: str,
+    knowledge_point: dict[str, Any],
+    recent_turns: list[dict[str, Any]],
+    context_chunks: list[str],
+) -> dict[str, Any]:
+    if settings.apgl_mock_ai:
+        name = str(knowledge_point.get("name") or "this concept")
+        return {
+            "question": f"In your own words, explain {name} and give one practical example.",
+            "expected_idea": str(knowledge_point.get("explanation") or name),
+            "citations": [],
+        }
+    system = (
+        "You ask one assessment question for a learner. Return only JSON with keys question, "
+        "expected_idea, and citations. The question should check understanding, not trivia."
+    )
+    user = (
+        f"Project: {project_title}\nLesson: {lesson_title}\n"
+        f"Knowledge point:\n{json.dumps(knowledge_point, ensure_ascii=False)}\n"
+        f"Recent turns:\n{json.dumps(recent_turns, ensure_ascii=False)}\n"
+        f"Source context:\n{chr(10).join(context_chunks)[:8000]}"
+    )
+    data = _response_json(_model_smart(), system, user, {"question"})
+    if not data or not str(data.get("question") or "").strip():
+        raise AIResponseError("Assessment question response must include question.")
+    return data
+
+
+def evaluate_assessment_answer(
+    question: str,
+    expected_idea: str,
+    learner_answer: str,
+    knowledge_point: dict[str, Any],
+) -> dict[str, Any]:
+    if not learner_answer.strip():
+        return {
+            "is_correct": False,
+            "score": 0.0,
+            "feedback": "Please provide an answer so the tutor can evaluate your understanding.",
+            "missing_concepts": ["No answer provided"],
+            "mastery_delta": -0.02,
+            "next_action": "explain_again",
+        }
+    if settings.apgl_mock_ai:
+        graded = _fallback_grade(question, expected_idea, learner_answer)
+        return {
+            "is_correct": graded["is_correct"],
+            "score": 0.86 if graded["is_correct"] else 0.45,
+            "feedback": graded["feedback"],
+            "missing_concepts": [] if graded["is_correct"] else [str(knowledge_point.get("name") or "Core idea")],
+            "mastery_delta": 0.1 if graded["is_correct"] else -0.03,
+            "next_action": "move_on" if graded["is_correct"] else "ask_follow_up",
+        }
+    system = (
+        "You evaluate one learner answer. Return only JSON with keys is_correct, score, feedback, "
+        "missing_concepts, mastery_delta, and next_action. score must be 0 to 1."
+    )
+    user = (
+        f"Question: {question}\nExpected idea: {expected_idea}\n"
+        f"Knowledge point: {json.dumps(knowledge_point, ensure_ascii=False)}\n"
+        f"Learner answer: {learner_answer}"
+    )
+    data = _response_json(_model_smart(), system, user, {"is_correct", "score"})
+    if not data or not isinstance(data.get("is_correct"), bool):
+        raise AIResponseError("Assessment evaluation must include boolean is_correct.")
+    return data
+
+
 def generate_skill_plan(title: str, goal: str, current_level: str | None) -> dict[str, Any]:
     if settings.apgl_mock_ai:
         return _fallback_plan(title, goal)
@@ -334,7 +665,7 @@ def grade_answer(prompt: str, expected: str, submitted: str) -> dict[str, Any]:
         f"Question: {prompt}\nExpected answer: {expected}\nLearner answer: {submitted}\n"
         "Mark correct only if the core idea is present."
     )
-    data = _response_json(_model_smart(), system, user)
+    data = _response_json_or_text_answer(_model_smart(), system, user, {"answer"})
     if data and isinstance(data.get("is_correct"), bool):
         return {
             "is_correct": data["is_correct"],

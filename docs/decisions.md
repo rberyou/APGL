@@ -29,3 +29,11 @@
 - Send low-score assessment answers to review, not only answers marked strictly incorrect.
 - Automatically mark projects as `passed` when mastery and open-gap criteria are satisfied.
 - Use one learner-facing generation recovery action, `Continue generation`, with explanatory copy instead of separate retry/resume buttons.
+- Keep FastAPI BackgroundTasks for this local-first slice, but persist every
+  generation stage and artifact so a later retry/resume can continue after local
+  service interruption.
+- Store uploaded source files in `backend/data/uploads/` and keep parsed text in
+  `SourceMaterial` so material jobs can be resumed without requiring another
+  browser upload.
+- Keep the legacy lesson-complete and static quiz endpoints temporarily for
+  compatibility, while the primary lesson UX uses dynamic assessment.

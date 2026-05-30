@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from datetime import timedelta
+
 from sqlmodel import Session, select
 
 from app.models import (
@@ -10,10 +12,15 @@ from app.models import (
     LearningEvent,
     LearningGap,
     LearningProject,
+    LessonKnowledgePoint,
     LessonStep,
     LessonUnit,
+    AssessmentSession,
+    AssessmentTurn,
+    MistakeRecord,
     ProjectTracker,
     QuizItem,
+    ReviewTask,
     SourceChunk,
     SourceCitation,
     StudySession,
@@ -22,7 +29,12 @@ from app.models import (
     User,
     utc_now,
 )
-from app.services.ai import generate_tutor_reply, summarize_tutor_session
+from app.services.ai import (
+    evaluate_assessment_answer,
+    generate_assessment_question,
+    generate_tutor_reply,
+    summarize_tutor_session,
+)
 from app.services.retrieval import search_project_chunks
 
 
@@ -92,14 +104,13 @@ def knowledge_map(db: Session, project: LearningProject) -> dict:
         .where(LessonUnit.project_id == project.id)
         .order_by(LessonUnit.order_index)
     ).all()
-    quiz_items = db.exec(
-        select(QuizItem).where(QuizItem.project_id == project.id)
-    ).all()
     lesson_by_id = {lesson.id: lesson for lesson in lessons}
     lesson_ids_by_kp: dict[int, set[int]] = {}
-    for quiz in quiz_items:
-        if quiz.knowledge_point_id and quiz.lesson_id:
-            lesson_ids_by_kp.setdefault(quiz.knowledge_point_id, set()).add(quiz.lesson_id)
+    mappings = db.exec(
+        select(LessonKnowledgePoint).where(LessonKnowledgePoint.project_id == project.id)
+    ).all()
+    for mapping in mappings:
+        lesson_ids_by_kp.setdefault(mapping.knowledge_point_id, set()).add(mapping.lesson_id)
     edges = db.exec(
         select(KnowledgeEdge).where(KnowledgeEdge.project_id == project.id)
     ).all()
@@ -108,8 +119,12 @@ def knowledge_map(db: Session, project: LearningProject) -> dict:
         "nodes": [
             {
                 "id": point.id,
+                "client_key": point.client_key,
                 "name": point.name,
                 "explanation": point.explanation,
+                "difficulty": point.difficulty,
+                "estimated_weight": point.estimated_weight,
+                "source_locator": point.source_locator,
                 "mastery": point.mastery,
                 "lesson_ids": sorted(lesson_ids_by_kp.get(point.id or 0, set())),
                 "lesson_titles": [
@@ -139,6 +154,50 @@ def lesson_steps(db: Session, lesson: LessonUnit) -> list[LessonStep]:
         .where(LessonStep.lesson_id == lesson.id)
         .order_by(LessonStep.order_index)
     ).all()
+
+
+def lesson_detail_payload(db: Session, lesson: LessonUnit) -> dict:
+    points = lesson_knowledge_points(db, lesson)
+    mastery = lesson_mastery(db, lesson.id)
+    return {
+        "id": lesson.id,
+        "project_id": lesson.project_id,
+        "title": lesson.title,
+        "summary": lesson.summary,
+        "content": lesson.content,
+        "order_index": lesson.order_index,
+        "status": lesson.status,
+        "knowledge_points": points,
+        "mastery": mastery,
+    }
+
+
+def lesson_knowledge_points(db: Session, lesson: LessonUnit) -> list[KnowledgePoint]:
+    mappings = db.exec(
+        select(LessonKnowledgePoint)
+        .where(LessonKnowledgePoint.lesson_id == lesson.id)
+        .order_by(LessonKnowledgePoint.order_index)
+    ).all()
+    points: list[KnowledgePoint] = []
+    for mapping in mappings:
+        point = db.get(KnowledgePoint, mapping.knowledge_point_id)
+        if point:
+            points.append(point)
+    return points
+
+
+def lesson_mastery(db: Session, lesson_id: int) -> float:
+    mappings = db.exec(
+        select(LessonKnowledgePoint).where(LessonKnowledgePoint.lesson_id == lesson_id)
+    ).all()
+    if not mappings:
+        return 0.0
+    values = []
+    for mapping in mappings:
+        point = db.get(KnowledgePoint, mapping.knowledge_point_id)
+        if point:
+            values.append(point.mastery)
+    return round(sum(values) / len(values), 2) if values else 0.0
 
 
 def start_session(
@@ -318,6 +377,182 @@ def end_session(db: Session, session: StudySession, project: LearningProject, us
     return session
 
 
+def start_assessment(db: Session, lesson: LessonUnit, project: LearningProject, user: User) -> AssessmentSession:
+    existing = db.exec(
+        select(AssessmentSession)
+        .where(AssessmentSession.lesson_id == lesson.id)
+        .where(AssessmentSession.user_id == user.id)
+        .where(AssessmentSession.status == "active")
+        .order_by(AssessmentSession.started_at.desc())
+    ).first()
+    if existing:
+        _ensure_assessment_turn(db, existing, lesson, project)
+        return existing
+    assessment = AssessmentSession(
+        project_id=project.id,
+        lesson_id=lesson.id,
+        user_id=user.id,
+        mode="quiz",
+    )
+    db.add(assessment)
+    db.commit()
+    db.refresh(assessment)
+    _ensure_assessment_turn(db, assessment, lesson, project)
+    return assessment
+
+
+def get_assessment(db: Session, assessment: AssessmentSession) -> AssessmentSession:
+    lesson = db.get(LessonUnit, assessment.lesson_id)
+    project = db.get(LearningProject, assessment.project_id)
+    if lesson and project and assessment.status == "active":
+        _ensure_assessment_turn(db, assessment, lesson, project)
+    return assessment
+
+
+def answer_assessment(
+    db: Session,
+    assessment: AssessmentSession,
+    project: LearningProject,
+    user: User,
+    answer: str,
+) -> AssessmentSession:
+    turn = _current_unanswered_turn(db, assessment.id)
+    if not turn:
+        lesson = db.get(LessonUnit, assessment.lesson_id)
+        if not lesson:
+            raise ValueError("Lesson not found")
+        _ensure_assessment_turn(db, assessment, lesson, project)
+        turn = _current_unanswered_turn(db, assessment.id)
+    if not turn:
+        raise ValueError("No active assessment question is available.")
+    point = db.get(KnowledgePoint, turn.knowledge_point_id) if turn.knowledge_point_id else None
+    expected = _turn_expected_idea(turn)
+    result = evaluate_assessment_answer(
+        turn.question,
+        expected,
+        answer,
+        _kp_dict(point) if point else {},
+    )
+    score = _clamp(float(result.get("score") or 0.0), 0.0, 1.0)
+    raw_delta = float(result.get("mastery_delta") or 0.0)
+    if score >= 0.8:
+        delta = _clamp(raw_delta, 0.0, 0.12)
+    else:
+        delta = _clamp(raw_delta, -0.05, 0.08)
+    if point:
+        point.mastery = _clamp(point.mastery + delta, 0.0, 1.0)
+        db.add(point)
+    missing = [str(item) for item in (result.get("missing_concepts") or [])[:8]]
+    turn.status = "answered"
+    turn.user_answer = answer
+    turn.feedback = str(result.get("feedback") or "")
+    turn.score = score
+    turn.mastery_delta = delta
+    turn.missing_concepts_json = json.dumps(missing, ensure_ascii=False)
+    turn.next_action = str(result.get("next_action") or ("move_on" if score >= 0.8 else "ask_follow_up"))
+    turn.answered_at = utc_now()
+    db.add(turn)
+    review_task_id = None
+    if (not bool(result.get("is_correct"))) or score < 0.70:
+        review_task_id = _create_assessment_review(db, turn, project, user, point)
+    elif score < 0.80 and point:
+        _upsert_learning_gap(
+            db,
+            project.id,
+            point.id,
+            f"Practice {point.name}",
+            "medium",
+            turn.feedback or "Assessment showed partial understanding.",
+        )
+    db.add(
+        LearningEvent(
+            project_id=project.id,
+            user_id=user.id,
+            event_type="assessment_answer",
+            knowledge_point_id=point.id if point else None,
+            lesson_id=assessment.lesson_id,
+            metadata_json=json.dumps(
+                {"assessment_id": assessment.id, "turn_id": turn.id, "score": score, "review_task_id": review_task_id},
+                ensure_ascii=False,
+            ),
+        )
+    )
+    assessment.updated_at = utc_now()
+    db.add(assessment)
+    db.commit()
+    refresh_project_mastery(db, project.id)
+    if lesson_mastery(db, assessment.lesson_id) >= 0.80:
+        complete_assessment(db, assessment, "Lesson mastery threshold reached.")
+    else:
+        lesson = db.get(LessonUnit, assessment.lesson_id)
+        if lesson:
+            _ensure_assessment_turn(db, assessment, lesson, project)
+    return assessment
+
+
+def complete_assessment(db: Session, assessment: AssessmentSession, summary: str | None = None) -> AssessmentSession:
+    assessment.status = "completed"
+    assessment.summary = summary or "Assessment ended before mastery was complete."
+    assessment.ended_at = utc_now()
+    assessment.updated_at = assessment.ended_at
+    db.add(assessment)
+    db.commit()
+    db.refresh(assessment)
+    return assessment
+
+
+def assessment_payload(db: Session, assessment: AssessmentSession) -> dict:
+    turns = db.exec(
+        select(AssessmentTurn)
+        .where(AssessmentTurn.assessment_id == assessment.id)
+        .order_by(AssessmentTurn.created_at)
+    ).all()
+    current = next((turn for turn in turns if turn.status == "asked"), None)
+    return {
+        "id": assessment.id,
+        "project_id": assessment.project_id,
+        "lesson_id": assessment.lesson_id,
+        "user_id": assessment.user_id,
+        "status": assessment.status,
+        "mode": assessment.mode,
+        "summary": assessment.summary,
+        "lesson_mastery": lesson_mastery(db, assessment.lesson_id),
+        "turns_answered": sum(1 for turn in turns if turn.status == "answered"),
+        "current_turn": _turn_payload(current) if current else None,
+        "turns": [_turn_payload(turn) for turn in turns],
+        "started_at": assessment.started_at,
+        "ended_at": assessment.ended_at,
+        "updated_at": assessment.updated_at,
+    }
+
+
+def refresh_project_mastery(db: Session, project_id: int) -> float:
+    mastery = _recalculate_project_mastery(db, project_id)
+    tracker = db.exec(select(ProjectTracker).where(ProjectTracker.project_id == project_id)).first()
+    if not tracker:
+        tracker = ProjectTracker(project_id=project_id)
+    tracker.mastery = mastery
+    tracker.next_plan = _next_plan(db, project_id, mastery)
+    tracker.updated_at = utc_now()
+    db.add(tracker)
+    project = db.get(LearningProject, project_id)
+    if project:
+        project.progress_percent = int(round(mastery * 100))
+        high_gaps = db.exec(
+            select(LearningGap)
+            .where(LearningGap.project_id == project_id)
+            .where(LearningGap.status == "open")
+            .where(LearningGap.severity == "high")
+        ).first()
+        if mastery >= 0.80 and not high_gaps and project.status != "passed":
+            project.status = "passed"
+            project.passed_at = utc_now()
+        project.updated_at = utc_now()
+        db.add(project)
+    db.commit()
+    return mastery
+
+
 def update_mastery_from_answer(
     db: Session,
     project_id: int,
@@ -357,6 +592,7 @@ def update_mastery_from_answer(
             lesson_id=lesson_id,
         )
     )
+    refresh_project_mastery(db, project_id)
 
 
 def _ensure_knowledge_edges(db: Session, project_id: int) -> None:
@@ -417,7 +653,270 @@ def _recalculate_project_mastery(db: Session, project_id: int) -> float:
     points = db.exec(select(KnowledgePoint).where(KnowledgePoint.project_id == project_id)).all()
     if not points:
         return 0.0
-    return round(sum(point.mastery for point in points) / len(points), 2)
+    weights = [point.estimated_weight if point.estimated_weight > 0 else 0 for point in points]
+    total = sum(weights)
+    if total <= 0:
+        return round(sum(point.mastery for point in points) / len(points), 2)
+    return round(sum(point.mastery * weight for point, weight in zip(points, weights)) / total, 2)
+
+
+def _ensure_assessment_turn(
+    db: Session,
+    assessment: AssessmentSession,
+    lesson: LessonUnit,
+    project: LearningProject,
+) -> None:
+    if _current_unanswered_turn(db, assessment.id):
+        return
+    if lesson_mastery(db, lesson.id) >= 0.80:
+        complete_assessment(db, assessment, "Lesson mastery threshold reached.")
+        return
+    point = _lowest_mastery_lesson_point(db, lesson)
+    if not point:
+        return
+    recent = [
+        _turn_prompt_payload(turn)
+        for turn in db.exec(
+            select(AssessmentTurn)
+            .where(AssessmentTurn.assessment_id == assessment.id)
+            .order_by(AssessmentTurn.created_at.desc())
+            .limit(5)
+        ).all()
+    ]
+    chunks = search_project_chunks(db, project.id, f"{lesson.title} {point.name}", limit=3)
+    question = generate_assessment_question(
+        project.title,
+        lesson.title,
+        _kp_dict(point),
+        recent,
+        [_chunk_context(chunk) for chunk in chunks],
+    )
+    turn = AssessmentTurn(
+        assessment_id=assessment.id,
+        project_id=project.id,
+        lesson_id=lesson.id,
+        knowledge_point_id=point.id,
+        question=str(question.get("question") or ""),
+        citations_json=json.dumps(question.get("citations") or [], ensure_ascii=False),
+        missing_concepts_json=json.dumps(
+            {"expected_idea": str(question.get("expected_idea") or point.explanation)},
+            ensure_ascii=False,
+        ),
+    )
+    db.add(turn)
+    assessment.updated_at = utc_now()
+    db.add(assessment)
+    db.commit()
+
+
+def _current_unanswered_turn(db: Session, assessment_id: int) -> AssessmentTurn | None:
+    return db.exec(
+        select(AssessmentTurn)
+        .where(AssessmentTurn.assessment_id == assessment_id)
+        .where(AssessmentTurn.status == "asked")
+        .order_by(AssessmentTurn.created_at.desc())
+    ).first()
+
+
+def _lowest_mastery_lesson_point(db: Session, lesson: LessonUnit) -> KnowledgePoint | None:
+    points = lesson_knowledge_points(db, lesson)
+    if not points:
+        return db.exec(
+            select(KnowledgePoint)
+            .where(KnowledgePoint.project_id == lesson.project_id)
+            .order_by(KnowledgePoint.mastery, KnowledgePoint.id)
+        ).first()
+    return min(points, key=lambda point: (point.mastery, point.id or 0))
+
+
+def _create_assessment_review(
+    db: Session,
+    turn: AssessmentTurn,
+    project: LearningProject,
+    user: User,
+    point: KnowledgePoint | None,
+) -> int | None:
+    quiz = QuizItem(
+        lesson_id=turn.lesson_id,
+        project_id=project.id,
+        knowledge_point_id=point.id if point else None,
+        question_type="dynamic_assessment",
+        prompt=turn.question,
+        answer=_turn_expected_idea(turn),
+        explanation=turn.feedback or "",
+    )
+    db.add(quiz)
+    db.commit()
+    db.refresh(quiz)
+    turn.quiz_item_id = quiz.id
+    db.add(turn)
+    mistake = MistakeRecord(
+        quiz_item_id=quiz.id,
+        user_id=user.id,
+        knowledge_point_id=point.id if point else None,
+        user_answer=turn.user_answer or "",
+        reason=turn.feedback or "Assessment answer needs review.",
+    )
+    db.add(mistake)
+    db.commit()
+    db.refresh(mistake)
+    review = ReviewTask(
+        user_id=user.id,
+        quiz_item_id=quiz.id,
+        mistake_id=mistake.id,
+        due_at=utc_now(),
+    )
+    db.add(review)
+    if point:
+        _upsert_learning_gap(
+            db,
+            project.id,
+            point.id,
+            f"Review {point.name}",
+            "high" if (turn.score or 0) < 0.7 else "medium",
+            turn.feedback or "Assessment answer needs review.",
+        )
+    db.commit()
+    db.refresh(review)
+    return review.id
+
+
+def _upsert_learning_gap(
+    db: Session,
+    project_id: int,
+    point_id: int | None,
+    title: str,
+    severity: str,
+    evidence: str,
+) -> None:
+    gap = db.exec(
+        select(LearningGap)
+        .where(LearningGap.project_id == project_id)
+        .where(LearningGap.knowledge_point_id == point_id)
+        .where(LearningGap.status == "open")
+    ).first()
+    if not gap:
+        gap = LearningGap(project_id=project_id, knowledge_point_id=point_id, title=title)
+    gap.severity = severity
+    gap.evidence = evidence
+    gap.updated_at = utc_now()
+    db.add(gap)
+
+
+def _turn_expected_idea(turn: AssessmentTurn) -> str:
+    try:
+        parsed = json.loads(turn.missing_concepts_json or "{}")
+    except json.JSONDecodeError:
+        parsed = {}
+    if isinstance(parsed, dict):
+        return str(parsed.get("expected_idea") or "")
+    return ""
+
+
+def _turn_payload(turn: AssessmentTurn | None) -> dict | None:
+    if not turn:
+        return None
+    try:
+        missing = json.loads(turn.missing_concepts_json or "[]")
+    except json.JSONDecodeError:
+        missing = []
+    expected = None
+    if isinstance(missing, dict):
+        expected = missing.get("expected_idea")
+        missing = []
+    try:
+        citations = json.loads(turn.citations_json or "[]")
+    except json.JSONDecodeError:
+        citations = []
+    citations = _citation_list(citations)
+    return {
+        "id": turn.id,
+        "assessment_id": turn.assessment_id,
+        "project_id": turn.project_id,
+        "lesson_id": turn.lesson_id,
+        "knowledge_point_id": turn.knowledge_point_id,
+        "quiz_item_id": turn.quiz_item_id,
+        "status": turn.status,
+        "question": turn.question,
+        "user_answer": turn.user_answer,
+        "feedback": turn.feedback,
+        "score": turn.score,
+        "mastery_delta": turn.mastery_delta,
+        "missing_concepts": missing if isinstance(missing, list) else [],
+        "next_action": turn.next_action or ("expected: " + str(expected) if expected and turn.status == "answered" else None),
+        "citations": citations,
+        "created_at": turn.created_at,
+        "answered_at": turn.answered_at,
+    }
+
+
+def _turn_prompt_payload(turn: AssessmentTurn) -> dict:
+    payload = _turn_payload(turn) or {}
+    return {
+        "question": payload.get("question"),
+        "status": payload.get("status"),
+        "score": payload.get("score"),
+        "feedback": payload.get("feedback"),
+        "missing_concepts": payload.get("missing_concepts") or [],
+        "next_action": payload.get("next_action"),
+    }
+
+
+def _citation_list(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict] = []
+    for item in value[:5]:
+        if isinstance(item, dict):
+            result.append(
+                {
+                    "chunk_id": item.get("chunk_id") or item.get("source_chunk_id"),
+                    "title": str(item.get("title") or item.get("label") or "Assessment context"),
+                    "locator": item.get("locator"),
+                    "excerpt": str(item.get("excerpt") or item.get("text") or "")[:500],
+                }
+            )
+        else:
+            result.append(
+                {
+                    "chunk_id": None,
+                    "title": "Assessment context",
+                    "locator": None,
+                    "excerpt": str(item)[:500],
+                }
+            )
+    return result
+
+
+def _kp_dict(point: KnowledgePoint | None) -> dict:
+    if not point:
+        return {}
+    return {
+        "id": point.id,
+        "client_key": point.client_key,
+        "name": point.name,
+        "explanation": point.explanation,
+        "difficulty": point.difficulty,
+        "estimated_weight": point.estimated_weight,
+        "mastery": point.mastery,
+    }
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def _next_plan(db: Session, project_id: int, mastery: float) -> str:
+    lesson = db.exec(
+        select(LessonUnit)
+        .where(LessonUnit.project_id == project_id)
+        .order_by(LessonUnit.order_index)
+    ).first()
+    if mastery >= 0.8:
+        return "Project mastery is strong. Review remaining weak points or start a new challenge."
+    if lesson:
+        return f"Continue with {lesson.title} and use Quiz me to raise mastery."
+    return "Continue generation, then start the first lesson."
 
 
 def _json_list(value: str) -> list:
